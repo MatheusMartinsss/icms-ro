@@ -16,7 +16,7 @@ export default function Home() {
   const [diesel, setDiesel] = useState(0)
   const [peso, setPeso] = useState(0)
   const [tipo, setTipo] = useState('b')
-  const MAX_REQUESTS_PER_PERIOD = 20; // Defina o número máximo de solicitações permitidas
+  const MAX_REQUESTS_PER_PERIOD = 10; // Defina o número máximo de solicitações permitidas
   const REQUEST_PERIOD_MS = 3600000; // Defina o período em milissegundos (por exemplo, 1 hora)
 
   let requestsCount = 0;
