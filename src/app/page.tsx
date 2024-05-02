@@ -75,14 +75,14 @@ export default function Home() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center  p-24">
-      <Card className="w-[700px]">
-        <CardHeader className="flex items-center">
+    <main className="flex min-h-screen flex-col items-center p-2  lg:p-24 md:p-16">
+      <Card className="flex flex-col w-full lg:w-[800px] md:w-[650px]">
+        <CardHeader className="flex  items-center">
           <CardTitle>ICMS DE FRETE RO</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex w-full">
           <div className="flex flex-col w-full  gap-2">
-            <div className="grid grid-cols-3 gap-4 justify-between  w-full">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-4 w-full">
               <div className="flex flex-col justify-end">
                 <Label className="font-bold" htmlFor="cidade-origem">Cidade - UF Origem</Label>
                 <Label className="text-gray-400">(ex: Candeias do Jamari - RO) </Label>
@@ -93,8 +93,8 @@ export default function Home() {
                 <Label className="text-gray-400">(ex: Itajai - SC) </Label>
                 <Input value={destino} onChange={(e) => setDestino(e.target.value)} name='cidade-destino'></Input>
               </div>
-              <div className="flex flex-col justify-end">
-                <Button onClick={fetchDistance}>Calcular distancia</Button>
+              <div className="flex flex-col justify-end lg:w-full">
+                <Button className="lg:w-full" onClick={fetchDistance}>Calcular distancia</Button>
               </div>
             </div>
             <div className="flex flex-col space-y-1.5 justify-start">
@@ -153,7 +153,7 @@ export default function Home() {
                   <Label className="font-bold" htmlFor="cidade-origem">VALOR TRANSPORTE</Label>
                   <Label className="text-gray-400">{moneyMask(icms.baseCalculo)}</Label>
                 </div>
-                
+
               </div>
               <div className="grid grid-cols-3 gap-4 justify-between  w-full">
                 <div className="flex flex-col ">
