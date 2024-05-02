@@ -1,113 +1,234 @@
-import Image from "next/image";
+"use client"
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useEffect, useState } from "react";
+import axios from "axios";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import tabelaIndice from './indice.json'
 
 export default function Home() {
+  const [origem, setOrigem] = useState('')
+  const [destino, setDestino] = useState('')
+  const [distancia, setDistancia] = useState(0)
+  const [indice, setIndice] = useState(0)
+  const [diesel, setDiesel] = useState(0)
+  const [peso, setPeso] = useState(0)
+  const [tipo, setTipo] = useState('b')
+  const [icms, setIcms] = useState({
+    baseCalculo: 0,
+    icms: 0,
+    red: 0,
+    total: 0,
+    total_red: 0
+  })
+  const SEFIN_URL = 'https://sidiec.sefin.ro.gov.br/ords/f?p=157:130::::::'
+
+  useEffect(() => {
+    if (distancia) {
+      getIndice()
+    }
+  }, [distancia, tipo])
+
+  const getIndice = () => {
+    const indice = tabelaIndice.tabela.filter((tab) => tab.range_min <= distancia && tab.range_max >= distancia).map((x) => x[tipo as keyof Object])
+    setIndice(Number(indice))
+  }
+
+  const calcularIcms = () => {
+    if (!indice || !diesel || !peso) return
+
+    const baseCalculo = parseFloat(((peso * diesel * indice) / 1000).toFixed(2))
+    const icms = parseFloat((baseCalculo * 0.12).toFixed(2))
+    const red = parseFloat((icms * 0.20).toFixed(2))
+    const total_red = parseFloat((icms - red).toFixed(2))
+
+    setIcms((prevState) => ({
+      ...prevState,
+      baseCalculo,
+      icms,
+      red,
+      total: icms,
+      total_red
+    }))
+  }
+
+  const fetchDistance = async () => {
+    try {
+      if (!origem || !destino) return
+      const { data, status } = await axios.post('/api/', {
+        body: {
+          origem,
+          destino,
+          distancia
+        }
+      })
+      setOrigem(data.origin_addresses)
+      setDestino(data.destination_addresses)
+      const distanceValue = data.rows[0].elements[0].distance.value;
+      const limitedDistanceValue = parseInt(distanceValue.toString().substring(0, 4));
+      setDistancia(limitedDistanceValue);
+    } catch (error) {
+      console.log(error)
+    }
+  }
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
-      </div>
+    <main className="flex min-h-screen flex-col items-center  p-24">
+      <Card className="w-[700px]">
+        <CardHeader className="flex items-center">
+          <CardTitle>ICMS DE FRETE RO</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col w-full  gap-2">
+            <div className="grid grid-cols-3 gap-4 justify-between  w-full">
+              <div className="flex flex-col justify-end">
+                <Label className="font-bold" htmlFor="cidade-origem">Cidade - UF Origem</Label>
+                <Label className="text-gray-400">(ex: Candeias do Jamari - RO) </Label>
+                <Input value={origem} onChange={(e) => setOrigem(e.target.value)} name='cidade-origem'></Input>
+              </div>
+              <div className="flex flex-col justify-end">
+                <Label className="font-bold" htmlFor="cidade-destino">Cidade - UF Destino</Label>
+                <Label className="text-gray-400">(ex: Itajai - SC) </Label>
+                <Input value={destino} onChange={(e) => setDestino(e.target.value)} name='cidade-destino'></Input>
+              </div>
+              <div className="flex flex-col justify-end">
+                <Button onClick={fetchDistance}>Calcular distancia</Button>
+              </div>
+            </div>
+            <div className="flex flex-col space-y-1.5 justify-start">
+              <Label className="font-bold" htmlFor="km">Distancia(KM)</Label>
+              <Input value={killometersMask(distancia)} name="km" disabled></Input>
+            </div>
+            <div className="grid grid-cols-2 gap-4 justify-between  w-full" >
+              <div className="flex flex-col space-y-1.5 justify-start">
+                <Label className="font-bold" htmlFor="km">Tipo de Carga</Label>
+                <Select onValueChange={(value) => setTipo(value)} defaultValue={tipo}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Selecione tipo de carga" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectLabel>Carga</SelectLabel>
+                      <SelectItem value="a">Refrigerada</SelectItem>
+                      <SelectItem value="b">Carga Seca</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col space-y-1.5 justify-start">
+                <Label className="font-bold" htmlFor="indice">Indice (R$)</Label>
+                <Input value={indice} name="indice" disabled></Input>
+              </div>
+            </div>
+            <div className="flex flex-col space-y-1.5 justify-start">
+              <Label className="font-bold" htmlFor="diesel">Preço Diesel(R$)</Label>
+              <Label className="text-gray-400">
+                Valor do diesel disponível em{" "}
+                <a className="text-blue-600 underline" href={SEFIN_URL} target="_blank" rel="noopener noreferrer">
+                  SEFIN
+                </a>
+              </Label>
+              <Input
+                value={moneyMask(diesel)}
+                onChange={(e) => {
+                  const value = unMaskReais(e.target.value)
+                  setDiesel(value)
+                }}
+                name="diesel"></Input>
+            </div>
+            <div className="flex flex-col space-y-1.5 justify-start">
+              <Label className="font-bold" htmlFor="peso">Peso Liquido (KG)</Label>
+              <Input
+                value={pesoMask(peso)}
+                onChange={(e) => {
+                  setPeso(unMaskPeso(e.target.value))
+                }}
+                name="peso"></Input>
+            </div>
+            <div className="flex flex-col w-full  gap-4">
+              <div className="grid grid-cols-3 gap-4 justify-between  w-full">
+                <div className="flex flex-col ">
+                  <Label className="font-bold" htmlFor="cidade-origem">VALOR TRANSPORTE</Label>
+                  <Label className="text-gray-400">{moneyMask(icms.baseCalculo)}</Label>
+                </div>
+                
+              </div>
+              <div className="grid grid-cols-3 gap-4 justify-between  w-full">
+                <div className="flex flex-col ">
+                  <Label className="font-bold" htmlFor="cidade-origem">ICMS SEM REDUÇÃO</Label>
+                  <Label className="text-gray-400">{moneyMask(icms.total)}</Label>
+                </div>
+                <div className="flex flex-col ">
+                  <Label className="font-bold" htmlFor="cidade-origem">RED. 20% </Label>
+                  <Label className="text-gray-400">{moneyMask(icms.red)}</Label>
+                </div>
+                <div className="flex flex-col ">
+                  <Label className="font-bold" htmlFor="cidade-origem">ICMS REDUZIDO</Label>
+                  <Label className="text-gray-400">{moneyMask(icms.total_red)}</Label>
+                </div>
+              </div>
+              <div className="flex flex-col ">
+                <Label className="font-bold" htmlFor="cidade-origem">BASE DE CALCULO</Label>
+                <Label className="text-gray-400">{`BC ${icms.baseCalculo} x 12% = ${moneyMask(icms.icms)} - RED. 20% ${moneyMask(icms.red)} = ${moneyMask(icms.total_red)}`}</Label>
+              </div>
+            </div>
+            <div className="flex flex-col w-full  space-y-1.5">
+              <Button onClick={calcularIcms} className="w-full">Calcular</Button>
+            </div>
 
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
     </main>
   );
 }
+
+const killometersMask = (value: number): string => {
+  return new Intl.NumberFormat(
+    "pt-BR",
+    {
+      style: 'unit',
+      unit: 'kilometer',
+      unitDisplay: 'short',
+      maximumSignificantDigits: 5,
+      maximumFractionDigits: 0
+    }
+  ).format(value)
+}
+
+const pesoMask = (value: number): string => {
+  return new Intl.NumberFormat(
+    "pt-BR",
+    {
+      style: 'unit',
+      unit: 'kilogram',
+      unitDisplay: 'short',
+      maximumSignificantDigits: 5,
+      maximumFractionDigits: 0
+    }
+  ).format(value)
+}
+const unMaskPeso = (value: string | undefined): number => {
+  return typeof value === "number"
+    ? value
+    : Number(value?.replace(/\D/g, ""));
+};
+
+const moneyMask = (value: number): string => {
+  return (Number(value.toString().replace(/\D/g, "")) / 100).toLocaleString(
+    "pt-BR",
+    {
+      style: "currency",
+      currency: "BRL",
+    }
+  );
+};
+
+const unMaskReais = (value: string | undefined): number => {
+  return typeof value === "number"
+    ? value
+    : Number(value?.replace(/\D/g, "")) / 100;
+};
