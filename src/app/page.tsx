@@ -16,6 +16,12 @@ export default function Home() {
   const [diesel, setDiesel] = useState(0)
   const [peso, setPeso] = useState(0)
   const [tipo, setTipo] = useState('b')
+  const MAX_REQUESTS_PER_PERIOD = 100; // Defina o número máximo de solicitações permitidas
+  const REQUEST_PERIOD_MS = 3600000; // Defina o período em milissegundos (por exemplo, 1 hora)
+
+  let requestsCount = 0;
+  let lastResetTime = Date.now();
+
   const [icms, setIcms] = useState({
     baseCalculo: 0,
     icms: 0,
@@ -56,7 +62,20 @@ export default function Home() {
 
   const fetchDistance = async () => {
     try {
+
+      const currentTime = Date.now();
+      if (currentTime - lastResetTime > REQUEST_PERIOD_MS) {
+        requestsCount = 0;
+        lastResetTime = currentTime;
+      }
+   
+      if (requestsCount >= MAX_REQUESTS_PER_PERIOD) {
+        console.log('Limite de solicitações excedido. Tente novamente mais tarde.');
+        return;
+      }
+
       if (!origem || !destino) return
+
       const { data, status } = await axios.post('/api/', {
         body: {
           origem,
