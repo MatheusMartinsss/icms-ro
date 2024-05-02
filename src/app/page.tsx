@@ -88,6 +88,7 @@ export default function Home() {
       const distanceValue = data.rows[0].elements[0].distance.value;
       const limitedDistanceValue = parseInt(distanceValue.toString().substring(0, 4));
       setDistancia(limitedDistanceValue);
+      requestsCount++;
     } catch (error) {
       console.log(error)
     }
