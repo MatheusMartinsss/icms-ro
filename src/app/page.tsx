@@ -16,11 +16,8 @@ export default function Home() {
   const [diesel, setDiesel] = useState(0)
   const [peso, setPeso] = useState(0)
   const [tipo, setTipo] = useState('b')
-  const MAX_REQUESTS_PER_PERIOD = 10; 
-  const REQUEST_PERIOD_MS = 3600000; 
+  const [requested, setRequested] = useState(false)
 
-  let requestsCount = 0;
-  let lastResetTime = Date.now();
 
   const [icms, setIcms] = useState({
     baseCalculo: 0,
@@ -36,6 +33,8 @@ export default function Home() {
       getIndice()
     }
   }, [distancia, tipo])
+
+  useEffect(() => setRequested(false), [origem, destino])
 
   const getIndice = () => {
     const indice = tabelaIndice.tabela.filter((tab) => tab.range_min <= distancia && tab.range_max >= distancia).map((x) => x[tipo as keyof Object])
@@ -62,20 +61,7 @@ export default function Home() {
 
   const fetchDistance = async () => {
     try {
-
-      const currentTime = Date.now();
-      if (currentTime - lastResetTime > REQUEST_PERIOD_MS) {
-        requestsCount = 0;
-        lastResetTime = currentTime;
-      }
-   
-      if (requestsCount >= MAX_REQUESTS_PER_PERIOD) {
-        console.log('Limite de solicitações excedido. Tente novamente mais tarde.');
-        return;
-      }
-
-      if (!origem || !destino) return
-
+      if (!origem || !destino || requested) return
       const { data, status } = await axios.post('/api/', {
         body: {
           origem,
@@ -88,7 +74,7 @@ export default function Home() {
       const distanceValue = data.rows[0].elements[0].distance.value;
       const limitedDistanceValue = parseInt(distanceValue.toString().substring(0, 4));
       setDistancia(limitedDistanceValue);
-      requestsCount++;
+      setRequested(true)
     } catch (error) {
       console.log(error)
     }
@@ -114,7 +100,7 @@ export default function Home() {
                 <Input value={destino} onChange={(e) => setDestino(e.target.value)} name='cidade-destino'></Input>
               </div>
               <div className="flex flex-col justify-end lg:w-full">
-                <Button className="lg:w-full" onClick={fetchDistance}>Calcular distancia</Button>
+                <Button className="lg:w-full" disabled = {requested} onClick={fetchDistance}>Calcular distancia</Button>
               </div>
             </div>
             <div className="flex flex-col space-y-1.5 justify-start">
