@@ -44,11 +44,11 @@ export default function Home() {
   const calcularIcms = () => {
     if (!indice || !diesel || !peso) return
 
-    const baseCalculo = parseFloat(((peso * diesel * indice) / 1000).toFixed(2))
-    const icms = parseFloat((baseCalculo * 0.12).toFixed(2))
+    const baseCalculo = parseFloat((((peso * diesel * indice) / 1000)).toFixed(2))
+    const icms = parseFloat(((baseCalculo * 0.12)).toFixed(2))
     const red = parseFloat((icms * 0.20).toFixed(2))
-    const total_red = parseFloat((icms - red).toFixed(2))
-
+    const total_red = parseFloat(((icms - red) * 100).toFixed(2))
+    console.log(icms, total_red)
     setIcms((prevState) => ({
       ...prevState,
       baseCalculo,
@@ -100,7 +100,7 @@ export default function Home() {
                 <Input value={destino} onChange={(e) => setDestino(e.target.value)} name='cidade-destino'></Input>
               </div>
               <div className="flex flex-col justify-end lg:w-full">
-                <Button className="lg:w-full" disabled = {requested} onClick={fetchDistance}>Calcular distancia</Button>
+                <Button className="lg:w-full" disabled={requested} onClick={fetchDistance}>Calcular distancia</Button>
               </div>
             </div>
             <div className="flex flex-col space-y-1.5 justify-start">
@@ -157,7 +157,7 @@ export default function Home() {
               <div className="grid grid-cols-3 gap-4 justify-between  w-full">
                 <div className="flex flex-col ">
                   <Label className="font-bold" htmlFor="cidade-origem">VALOR TRANSPORTE</Label>
-                  <Label className="text-gray-400">{moneyMask(icms.baseCalculo)}</Label>
+                  <Label className="text-gray-400">{icms.baseCalculo.toFixed(2)}</Label>
                 </div>
 
               </div>
@@ -177,7 +177,7 @@ export default function Home() {
               </div>
               <div className="flex flex-col ">
                 <Label className="font-bold" htmlFor="cidade-origem">BASE DE CALCULO</Label>
-                <Label className="text-gray-400">{`BC ${icms.baseCalculo} x 12% = ${moneyMask(icms.icms)} - RED. 20% ${moneyMask(icms.red)} = ${moneyMask(icms.total_red)}`}</Label>
+                <Label className="text-gray-400">{`BC ${icms.baseCalculo.toFixed(2)} x 12% = ${moneyMask(icms.icms)} - RED. 20% ${moneyMask(icms.red)} = ${moneyMask(icms.total_red)}`}</Label>
               </div>
             </div>
             <div className="flex flex-col w-full  space-y-1.5">
