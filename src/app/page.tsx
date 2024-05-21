@@ -11,9 +11,9 @@ import tabelaIndice from './indice.json'
 export default function Home() {
   const [origem, setOrigem] = useState('')
   const [destino, setDestino] = useState('')
-  const [distancia, setDistancia] = useState(340400)
+  const [distancia, setDistancia] = useState(0)
   const [indice, setIndice] = useState(0)
-  const [diesel, setDiesel] = useState(6140)
+  const [diesel, setDiesel] = useState(0)
   const [peso, setPeso] = useState(0)
   const [tipo, setTipo] = useState('b')
   const [requested, setRequested] = useState(false)
@@ -141,7 +141,7 @@ export default function Home() {
                 value={moneyMask(diesel)}
                 onChange={(e) => {
                   const value = unMaskReais(e.target.value)
-                  setDiesel(value * 1000)
+                  setDiesel(parseFloat((value * 1000).toFixed(2)))
                 }}
                 name="diesel"></Input>
             </div>
@@ -237,5 +237,5 @@ const moneyMask = (value: number): string => {
 const unMaskReais = (value: string | undefined): number => {
   return typeof value === "number"
     ? value
-    : Number(value?.replace(/\D/g, "")) / 1000;
+    : Number(value?.replace(/\D/g, "")) / 100;
 };
