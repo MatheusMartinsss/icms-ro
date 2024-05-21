@@ -11,9 +11,9 @@ import tabelaIndice from './indice.json'
 export default function Home() {
   const [origem, setOrigem] = useState('')
   const [destino, setDestino] = useState('')
-  const [distancia, setDistancia] = useState(0)
+  const [distancia, setDistancia] = useState(340400)
   const [indice, setIndice] = useState(0)
-  const [diesel, setDiesel] = useState(0)
+  const [diesel, setDiesel] = useState(6140)
   const [peso, setPeso] = useState(0)
   const [tipo, setTipo] = useState('b')
   const [requested, setRequested] = useState(false)
@@ -37,25 +37,26 @@ export default function Home() {
   useEffect(() => setRequested(false), [origem, destino])
 
   const getIndice = () => {
-    const indice = tabelaIndice.tabela.filter((tab) => tab.range_min <= distancia && tab.range_max >= distancia).map((x) => x[tipo as keyof Object])
-    setIndice(Number(indice))
+    const dist = distancia / 100
+    const indice = tabelaIndice.tabela.filter((tab) => tab.range_min <= dist && tab.range_max >= dist).map((x) => x[tipo as keyof Object])
+    setIndice(Number(indice) * 1000)
   }
 
   const calcularIcms = () => {
     if (!indice || !diesel || !peso) return
 
-    const baseCalculo = parseFloat((((peso * diesel * indice) / 1000)).toFixed(2))
+
+    const baseCalculo = parseFloat((((peso * diesel * indice) / 1000000000).toFixed(2)))
     const icms = parseFloat(((baseCalculo * 0.12)).toFixed(2))
     const red = parseFloat((icms * 0.20).toFixed(2))
-    const total_red = parseFloat(((icms - red) * 100).toFixed(2))
-    console.log(icms, total_red)
+    const total_red = parseFloat(((icms - red)).toFixed(2))
     setIcms((prevState) => ({
       ...prevState,
-      baseCalculo,
-      icms,
-      red,
-      total: icms,
-      total_red
+      baseCalculo: (parseFloat((baseCalculo * 1000).toFixed(2))),
+      icms: (parseFloat((icms * 1000).toFixed(2))),
+      red: parseFloat((red * 1000).toFixed(2)),
+      total: parseFloat((icms * 1000).toFixed(2)),
+      total_red: parseFloat((total_red * 1000).toFixed(2))
     }))
   }
 
@@ -73,13 +74,13 @@ export default function Home() {
       setDestino(data.destination_addresses)
       const distanceValue = data.rows[0].elements[0].distance.value;
       const limitedDistanceValue = parseInt(distanceValue.toString().substring(0, 4));
-      setDistancia(limitedDistanceValue);
+      setDistancia(limitedDistanceValue * 100);
       setRequested(true)
     } catch (error) {
       console.log(error)
     }
   }
-
+  console.log(icms)
   return (
     <main className="flex min-h-screen flex-col items-center p-2  lg:p-24 md:p-16">
       <Card className="flex flex-col w-full lg:w-[800px] md:w-[650px]">
@@ -125,7 +126,7 @@ export default function Home() {
               </div>
               <div className="flex flex-col space-y-1.5 justify-start">
                 <Label className="font-bold" htmlFor="indice">Indice (R$)</Label>
-                <Input value={indice} name="indice" disabled></Input>
+                <Input value={moneyMask(indice)} name="indice" disabled></Input>
               </div>
             </div>
             <div className="flex flex-col space-y-1.5 justify-start">
@@ -140,7 +141,7 @@ export default function Home() {
                 value={moneyMask(diesel)}
                 onChange={(e) => {
                   const value = unMaskReais(e.target.value)
-                  setDiesel(value)
+                  setDiesel(value * 1000)
                 }}
                 name="diesel"></Input>
             </div>
@@ -157,7 +158,7 @@ export default function Home() {
               <div className="grid grid-cols-3 gap-4 justify-between  w-full">
                 <div className="flex flex-col ">
                   <Label className="font-bold" htmlFor="cidade-origem">VALOR TRANSPORTE</Label>
-                  <Label className="text-gray-400">{icms.baseCalculo.toFixed(2)}</Label>
+                  <Label className="text-gray-400">{moneyMask(icms.baseCalculo)}</Label>
                 </div>
 
               </div>
@@ -177,7 +178,7 @@ export default function Home() {
               </div>
               <div className="flex flex-col ">
                 <Label className="font-bold" htmlFor="cidade-origem">BASE DE CALCULO</Label>
-                <Label className="text-gray-400">{`BC ${icms.baseCalculo.toFixed(2)} x 12% = ${moneyMask(icms.icms)} - RED. 20% ${moneyMask(icms.red)} = ${moneyMask(icms.total_red)}`}</Label>
+                <Label className="text-gray-400">{`BC ${moneyMask(icms.baseCalculo)} x 12% = ${moneyMask(icms.icms)} - RED. 20% ${moneyMask(icms.red)} = ${moneyMask(icms.total_red)}`}</Label>
               </div>
             </div>
             <div className="flex flex-col w-full  space-y-1.5">
@@ -202,7 +203,7 @@ const killometersMask = (value: number): string => {
       maximumSignificantDigits: 5,
       maximumFractionDigits: 0
     }
-  ).format(value)
+  ).format(value / 100)
 }
 
 const pesoMask = (value: number): string => {
@@ -224,7 +225,7 @@ const unMaskPeso = (value: string | undefined): number => {
 };
 
 const moneyMask = (value: number): string => {
-  return (Number(value.toString().replace(/\D/g, "")) / 100).toLocaleString(
+  return (Number(value.toString().replace(/\D/g, "")) / 1000).toLocaleString(
     "pt-BR",
     {
       style: "currency",
@@ -236,5 +237,5 @@ const moneyMask = (value: number): string => {
 const unMaskReais = (value: string | undefined): number => {
   return typeof value === "number"
     ? value
-    : Number(value?.replace(/\D/g, "")) / 100;
+    : Number(value?.replace(/\D/g, "")) / 1000;
 };
