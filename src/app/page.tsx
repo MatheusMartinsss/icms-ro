@@ -3,10 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useEffect, useState } from "react";
+import { ChangeEvent, useEffect, useState } from "react";
 import axios from "axios";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import tabelaIndice from './indice.json'
+import xml2js from "xml2js";  // Importando a biblioteca xml2js
 
 export default function Home() {
   const [origem, setOrigem] = useState('')
@@ -17,8 +18,10 @@ export default function Home() {
   const [peso, setPeso] = useState(0)
   const [tipo, setTipo] = useState('b')
   const [requested, setRequested] = useState(false)
-
-
+  const [jsonData, setJsonData] = useState(null);
+  const [dest, setDest] = useState<any>(null)
+  const [emit, setEmit] = useState<any>(null)
+  const [ide, setIde] = useState<any>(null)
   const [icms, setIcms] = useState({
     baseCalculo: 0,
     icms: 0,
@@ -80,6 +83,81 @@ export default function Home() {
       console.log(error)
     }
   }
+  const readXml = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        const content = e.target?.result;
+
+        if (!content) return
+        // Usando xml2js para converter o XML para JSON
+        xml2js.parseString(content, { explicitArray: false }, (err, result) => {
+          if (err) {
+            console.error("Erro ao converter XML para JSON:", err);
+          } else {
+            const { NFe } = result.nfeProc
+            const { dest, emit, ide, transp: {
+
+            } } = NFe.infNFe
+            setOrigem(`${emit.enderEmit.xMun} - ${emit.enderEmit.UF}`)
+            setDestino(`${dest.enderDest.xMun} - ${dest.enderDest.UF}`)
+            setDest(dest)
+            setEmit(emit)
+            setIde(ide)
+            setJsonData(result);  // Definindo o JSON resultante no estado
+          }
+        });
+      };
+
+      reader.readAsText(file);
+    }
+  }
+  const gerarDare = async () => {
+    if (!emit || !dest) return;
+
+    try {
+      const response = await fetch('/api/dare', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          invoiceNumber: ide?.nNF,
+          recipient: dest?.xNome,
+          origin: `${emit.enderEmit.xMun} - ${emit.enderEmit.UF}`,
+          destination: `${dest.enderDest.xMun} - ${dest.enderDest.UF}`,
+          product: "ICMS - SERVIÇO TRANSPORTE DE CARGA",
+          calculationBase: `BC ${moneyMask(icms.baseCalculo)} x 12% = ${moneyMask(icms.icms)} - RED. 20% ${moneyMask(icms.red)} = ${moneyMask(icms.total_red)}`,
+          value: moneyMask(icms.total_red),
+          receiptCode: '1414'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      // Get the PDF blob
+      const blob = await response.blob();
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'document.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+    } catch (error) {
+      console.error("An error occurred while generating the PDF:", error);
+      // Handle error (e.g., show error message to user)
+    }
+  };
+  console.log(jsonData)
   console.log(icms)
   return (
     <main className="flex min-h-screen flex-col items-center p-2  lg:p-24 md:p-16">
@@ -89,6 +167,10 @@ export default function Home() {
         </CardHeader>
         <CardContent className="flex w-full">
           <div className="flex flex-col w-full  gap-2">
+            <div className="flex flex-col">
+              <Label className="font-bold" htmlFor="cidade-origem">Carregar XML</Label>
+              <Input type="file" onChange={readXml} name='xml'></Input>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-4 w-full">
               <div className="flex flex-col justify-end">
                 <Label className="font-bold" htmlFor="cidade-origem">Cidade - UF Origem</Label>
@@ -183,6 +265,9 @@ export default function Home() {
             </div>
             <div className="flex flex-col w-full  space-y-1.5">
               <Button onClick={calcularIcms} className="w-full">Calcular</Button>
+            </div>
+            <div className="flex flex-col w-full  space-y-1.5">
+              <Button onClick={gerarDare} className="w-full">Gerar Dare</Button>
             </div>
 
           </div>

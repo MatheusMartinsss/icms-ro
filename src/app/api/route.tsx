@@ -1,6 +1,5 @@
 import axios from "axios"
 import { NextResponse } from "next/server"
-const cheerio = require('cheerio')
 
 export async function POST(request: Request) {
     const { body } = await request.json()
@@ -16,3 +15,4 @@ export async function POST(request: Request) {
     }
 
 }
+
