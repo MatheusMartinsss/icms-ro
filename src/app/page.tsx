@@ -8,8 +8,10 @@ import axios from "axios";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import tabelaIndice from './indice.json'
 import xml2js from "xml2js";  // Importando a biblioteca xml2js
+import { Check, Copy } from "lucide-react";
 
 export default function Home() {
+  const [copied, setCopied] = useState(false);
   const [origem, setOrigem] = useState('')
   const [destino, setDestino] = useState('')
   const [distancia, setDistancia] = useState(0)
@@ -38,28 +40,40 @@ export default function Home() {
   }, [distancia, tipo])
 
   useEffect(() => setRequested(false), [origem, destino])
-
+  useEffect(() => {
+    const valorDiesel = localStorage.getItem('valor_diesel')
+    if (valorDiesel) {
+      setDiesel(Number(valorDiesel))
+    }
+  }, [])
+  const copyText = () => {
+    const text = `BC ${moneyMask(icms.baseCalculo)} x 12% = ${moneyMask(icms.icms)} - RED. 20% ${moneyMask(icms.red)} = ${moneyMask(icms.total_red)}`;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
   const getIndice = () => {
-    const dist = distancia / 100
+    const dist = distancia
     const indice = tabelaIndice.tabela.filter((tab) => tab.range_min <= dist && tab.range_max >= dist).map((x) => x[tipo as keyof Object])
-    setIndice(Number(indice) * 1000)
+    setIndice(Number(indice) * 10000)
   }
 
   const calcularIcms = () => {
-    if (!indice || !diesel || !peso) return
+    const base = indice * diesel * peso
+    const valorRaw = base / 10000000
 
+    const icms = valorRaw * 0.12
+    const red = icms * 0.20
+    const total = icms - red
 
-    const baseCalculo = parseFloat((((peso * diesel * indice) / 1000000000).toFixed(2)))
-    const icms = parseFloat(((baseCalculo * 0.12)).toFixed(2))
-    const red = parseFloat((icms * 0.20).toFixed(2))
-    const total_red = parseFloat(((icms - red)).toFixed(2))
-    setIcms((prevState) => ({
-      ...prevState,
-      baseCalculo: (parseFloat((baseCalculo * 1000).toFixed(2))),
-      icms: (parseFloat((icms * 1000).toFixed(2))),
-      red: parseFloat((red * 1000).toFixed(2)),
-      total: parseFloat((icms * 1000).toFixed(2)),
-      total_red: parseFloat((total_red * 1000).toFixed(2))
+    setIcms((state) => ({
+      ...state,
+      baseCalculo: Number(valorRaw.toFixed(2)),
+      icms: Number(icms.toFixed(2)),
+      red: Number(red.toFixed(2)),
+      total: Number(total.toFixed(2)),
+      total_red: Number(total.toFixed(2))
     }))
   }
 
@@ -76,8 +90,7 @@ export default function Home() {
       setOrigem(data.origin_addresses)
       setDestino(data.destination_addresses)
       const distanceValue = data.rows[0].elements[0].distance.value;
-      const limitedDistanceValue = parseInt(distanceValue.toString().substring(0, 4));
-      setDistancia(limitedDistanceValue * 100);
+      setDistancia(Number(Math.round(distanceValue / 1000)));
       setRequested(true)
     } catch (error) {
       console.log(error)
@@ -157,16 +170,14 @@ export default function Home() {
       // Handle error (e.g., show error message to user)
     }
   };
-  console.log(jsonData)
-  console.log(icms)
   return (
-    <main className="flex min-h-screen flex-col items-center p-2  lg:p-24 md:p-16">
+    <main className="flex min-h-screen flex-col items-center p-2  lg:p-2 md:p-4">
       <Card className="flex flex-col w-full lg:w-[800px] md:w-[650px]">
         <CardHeader className="flex  items-center">
           <CardTitle>ICMS DE FRETE RO</CardTitle>
         </CardHeader>
         <CardContent className="flex w-full">
-          <div className="flex flex-col w-full  gap-2">
+          <div className="flex flex-col w-full gap-2">
             <div className="flex flex-col">
               <Label className="font-bold" htmlFor="cidade-origem">Carregar XML</Label>
               <Input type="file" onChange={readXml} name='xml'></Input>
@@ -186,11 +197,11 @@ export default function Home() {
                 <Button className="lg:w-full" disabled={requested} onClick={fetchDistance}>Calcular distancia</Button>
               </div>
             </div>
-            <div className="flex flex-col space-y-1.5 justify-start">
-              <Label className="font-bold" htmlFor="km">Distancia(KM)</Label>
-              <Input value={killometersMask(distancia)} name="km" disabled></Input>
-            </div>
-            <div className="grid grid-cols-2 gap-4 justify-between  w-full" >
+            <div className="grid grid-cols-3 gap-2 justify-between  w-full" >
+              <div className="flex flex-col space-y-1.5 justify-start">
+                <Label className="font-bold" htmlFor="km">Distancia(KM)</Label>
+                <Input value={killometersMask(distancia)} name="km" disabled></Input>
+              </div>
               <div className="flex flex-col space-y-1.5 justify-start">
                 <Label className="font-bold" htmlFor="km">Tipo de Carga</Label>
                 <Select onValueChange={(value) => setTipo(value)} defaultValue={tipo}>
@@ -223,7 +234,8 @@ export default function Home() {
                 value={moneyMask(diesel)}
                 onChange={(e) => {
                   const value = unMaskReais(e.target.value)
-                  setDiesel(parseFloat((value * 1000).toFixed(2)))
+                  setDiesel(value)
+                  localStorage.setItem('valor_diesel', String(value))
                 }}
                 name="diesel"></Input>
             </div>
@@ -232,22 +244,20 @@ export default function Home() {
               <Input
                 value={pesoMask(peso)}
                 onChange={(e) => {
-                  setPeso(unMaskPeso(e.target.value))
+                  const value = unMaskPeso(e.target.value)
+                  setPeso(value)
                 }}
                 name="peso"></Input>
             </div>
             <div className="flex flex-col w-full  gap-4">
-              <div className="grid grid-cols-3 gap-4 justify-between  w-full">
+              <div className="grid grid-cols-4 gap-2 justify-between  w-full">
                 <div className="flex flex-col ">
-                  <Label className="font-bold" htmlFor="cidade-origem">VALOR TRANSPORTE</Label>
+                  <Label className="font-bold" htmlFor="cidade-origem">BASE DE CALCULO</Label>
                   <Label className="text-gray-400">{moneyMask(icms.baseCalculo)}</Label>
                 </div>
-
-              </div>
-              <div className="grid grid-cols-3 gap-4 justify-between  w-full">
                 <div className="flex flex-col ">
-                  <Label className="font-bold" htmlFor="cidade-origem">ICMS SEM REDUÇÃO</Label>
-                  <Label className="text-gray-400">{moneyMask(icms.total)}</Label>
+                  <Label className="font-bold" htmlFor="cidade-origem">ICMS. 12%</Label>
+                  <Label className="text-gray-400">{moneyMask(icms.icms)}</Label>
                 </div>
                 <div className="flex flex-col ">
                   <Label className="font-bold" htmlFor="cidade-origem">RED. 20% </Label>
@@ -260,7 +270,14 @@ export default function Home() {
               </div>
               <div className="flex flex-col ">
                 <Label className="font-bold" htmlFor="cidade-origem">BASE DE CALCULO</Label>
-                <Label className="text-gray-400">{`BC ${moneyMask(icms.baseCalculo)} x 12% = ${moneyMask(icms.icms)} - RED. 20% ${moneyMask(icms.red)} = ${moneyMask(icms.total_red)}`}</Label>
+                <div className="flex items-center gap-2">
+                  <Label className="text-gray-400">
+                    {`BC ${moneyMask(icms.baseCalculo)} x 12% = ${moneyMask(icms.icms)} - RED. 20% ${moneyMask(icms.red)} = ${moneyMask(icms.total_red)}`}
+                  </Label>
+                  <button onClick={copyText} type="button" className="text-gray-500 hover:text-gray-800">
+                    {copied ? <Check size={18} /> : <Copy size={18} />}
+                  </button>
+                </div>
               </div>
             </div>
             <div className="flex flex-col w-full  space-y-1.5">
@@ -288,7 +305,7 @@ const killometersMask = (value: number): string => {
       maximumSignificantDigits: 5,
       maximumFractionDigits: 0
     }
-  ).format(value / 100)
+  ).format(value)
 }
 
 const pesoMask = (value: number): string => {
@@ -310,7 +327,8 @@ const unMaskPeso = (value: string | undefined): number => {
 };
 
 const moneyMask = (value: number): string => {
-  return (Number(value.toString().replace(/\D/g, "")) / 1000).toLocaleString(
+  const rawValue = (value / 10000)
+  return rawValue.toLocaleString(
     "pt-BR",
     {
       style: "currency",
@@ -322,5 +340,5 @@ const moneyMask = (value: number): string => {
 const unMaskReais = (value: string | undefined): number => {
   return typeof value === "number"
     ? value
-    : Number(value?.replace(/\D/g, "")) / 100;
+    : Number(value?.replace(/\D/g, "")) * 100;
 };
