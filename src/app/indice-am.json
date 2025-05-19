@@ -1,0 +1,356 @@
+{
+  "Acre": [
+    {
+      "cidade": "Brasiléia",
+      "valor": 38.22
+    },
+    {
+      "cidade": "Demais Cidades",
+      "valor": 38.22
+    },
+    {
+      "cidade": "Rio Branco",
+      "valor": 38.22
+    },
+    {
+      "cidade": "Sena Madureira",
+      "valor": 44.94
+    }
+  ],
+  "Alagoas": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 68.28
+    },
+    {
+      "cidade": "Maceió",
+      "valor": 58.51
+    }
+  ],
+  "Amapá": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 68.53
+    },
+    {
+      "cidade": "Macapá",
+      "valor": 85.64
+    }
+  ],
+  "Amazonas": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 16.43
+    },
+    {
+      "cidade": "Humaitá",
+      "valor": 28.41
+    },
+    {
+      "cidade": "Iranduba",
+      "valor": 10.15
+    },
+    {
+      "cidade": "Itacoatiara",
+      "valor": 13.58
+    },
+    {
+      "cidade": "Manacapuru",
+      "valor": 14.24
+    },
+    {
+      "cidade": "Presidente Figueiredo",
+      "valor": 10.59
+    },
+    {
+      "cidade": "Rio Preto da Eva",
+      "valor": 12.93
+    }
+  ],
+  "Bahia": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 40.35
+    },
+    {
+      "cidade": "Salvador",
+      "valor": 41.17
+    }
+  ],
+  "Ceará": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 39.45
+    },
+    {
+      "cidade": "Fortaleza",
+      "valor": 40.25
+    }
+  ],
+  "Distrito Federal": [
+    {
+      "cidade": "Brasília",
+      "valor": 39.0
+    }
+  ],
+  "Espirito Santo": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 49.34
+    },
+    {
+      "cidade": "Vitória",
+      "valor": 49.84
+    }
+  ],
+  "Goiás": [
+    {
+      "cidade": "Anápolis",
+      "valor": 42.14
+    },
+    {
+      "cidade": "Demais Cidades",
+      "valor": 42.14
+    },
+    {
+      "cidade": "Goiânia",
+      "valor": 40.14
+    },
+    {
+      "cidade": "Rio Verde",
+      "valor": 56.03
+    }
+  ],
+  "Maranhão": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 44.64
+    },
+    {
+      "cidade": "São Luiz",
+      "valor": 44.64
+    }
+  ],
+  "Mato Grosso": [
+    {
+      "cidade": "Cuiabá",
+      "valor": 38.85
+    },
+    {
+      "cidade": "Demais Cidades",
+      "valor": 38.85
+    }
+  ],
+  "Mato Grosso do Sul": [
+    {
+      "cidade": "Campo Grande",
+      "valor": 40.14
+    },
+    {
+      "cidade": "Demais Cidades",
+      "valor": 42.14
+    },
+    {
+      "cidade": "Dourados",
+      "valor": 48.31
+    }
+  ],
+  "Minas Gerais": [
+    {
+      "cidade": "Belo Horizonte",
+      "valor": 52.01
+    },
+    {
+      "cidade": "Demais Cidades",
+      "valor": 50.97
+    }
+  ],
+  "Pará": [
+    {
+      "cidade": "Belém",
+      "valor": 26.0
+    },
+    {
+      "cidade": "Demais Cidades",
+      "valor": 27.3
+    }
+  ],
+  "Paraíba": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 41.46
+    },
+    {
+      "cidade": "João Pessoa",
+      "valor": 42.31
+    }
+  ],
+  "Paraná": [
+    {
+      "cidade": "Curitiba",
+      "valor": 54.18
+    },
+    {
+      "cidade": "Demais Cidades",
+      "valor": 53.1
+    }
+  ],
+  "Pernambuco": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 40.35
+    },
+    {
+      "cidade": "Recife",
+      "valor": 41.17
+    }
+  ],
+  "Piauí": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 37.06
+    },
+    {
+      "cidade": "Teresina",
+      "valor": 35.29
+    }
+  ],
+  "Rio de Janeiro": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 52.08
+    },
+    {
+      "cidade": "Rio de Janeiro",
+      "valor": 53.14
+    }
+  ],
+  "Rio Grande do Norte": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 40.35
+    },
+    {
+      "cidade": "Natal",
+      "valor": 41.17
+    }
+  ],
+  "Rio Grande do Sul": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 58.45
+    },
+    {
+      "cidade": "Porto Alegre",
+      "valor": 59.64
+    }
+  ],
+  "Rondônia": [
+    {
+      "cidade": "Cacoal",
+      "valor": 44.49
+    },
+    {
+      "cidade": "Demais Cidades",
+      "valor": 25.03
+    },
+    {
+      "cidade": "Ji-Paraná",
+      "valor": 25.03
+    },
+    {
+      "cidade": "Porto Velho",
+      "valor": 29.9
+    },
+    {
+      "cidade": "Vilhena",
+      "valor": 26.78
+    }
+  ],
+  "Roraima": [
+    {
+      "cidade": "Alto Alegre",
+      "valor": 34.62
+    },
+    {
+      "cidade": "Boa Vista",
+      "valor": 27.57
+    },
+    {
+      "cidade": "Caracaraí",
+      "valor": 18.0
+    },
+    {
+      "cidade": "Caroebe",
+      "valor": 38.39
+    },
+    {
+      "cidade": "Demais Cidades",
+      "valor": 41.67
+    },
+    {
+      "cidade": "Entre Rios",
+      "valor": 45.0
+    },
+    {
+      "cidade": "Mucajaí",
+      "valor": 44.74
+    },
+    {
+      "cidade": "Pacaraima",
+      "valor": 43.07
+    },
+    {
+      "cidade": "Rorainópolis",
+      "valor": 17.0
+    },
+    {
+      "cidade": "São João da Baliza",
+      "valor": 31.85
+    },
+    {
+      "cidade": "São Luiz do Anauá",
+      "valor": 19.99
+    }
+  ],
+  "Santa Catarina": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 56.32
+    },
+    {
+      "cidade": "Florianópolis",
+      "valor": 57.47
+    }
+  ],
+  "São Paulo": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 52.08
+    },
+    {
+      "cidade": "São Paulo",
+      "valor": 58.55
+    }
+  ],
+  "Sergipe": [
+    {
+      "cidade": "Aracaju",
+      "valor": 48.86
+    },
+    {
+      "cidade": "Demais Cidades",
+      "valor": 40.35
+    }
+  ],
+  "Tocantins": [
+    {
+      "cidade": "Demais Cidades",
+      "valor": 59.9
+    },
+    {
+      "cidade": "Palmas",
+      "valor": 59.9
+    }
+  ]
+}
