@@ -146,10 +146,10 @@ export default function Home() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          invoiceNumber: nfe.ide?.nNF,
+          invoiceNumber: `000.${nfe.ide?.nNF}`,
           recipient: nfe.dest?.xNome,
-          origin: `${nfe.emit.enderEmit.xMun} - ${nfe.emit.enderEmit.UF}`,
-          destination: `${nfe.dest.enderDest.xMun} - ${nfe.dest.enderDest.UF}`,
+          origin: `${nfe.emit.enderEmit.xMun} - ${nfe.emit.enderEmit.UF}`.toLocaleUpperCase(),
+          destination: `${nfe.dest.enderDest.xMun} - ${nfe.dest.enderDest.UF}`.toLocaleUpperCase(),
           product: "ICMS - SERVIÇO TRANSPORTE DE CARGA",
           calculationBase: `BC ${formatReais(resultado.base)} x 12% = ${formatReais(resultado.icms)} - RED. 20% ${formatReais(resultado.reducao)} = ${formatReais(resultado.icmsReduzido)}`,
           value: formatReais(resultado.icmsReduzido),
