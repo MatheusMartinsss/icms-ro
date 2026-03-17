@@ -26,6 +26,13 @@ function mergeNested<T extends Record<string, any>>(
     return out
 }
 
+/** Remove chaves cujo valor é string vazia ou undefined — evita enviar campos opcionais inválidos */
+function omitEmpty<T extends Record<string, any>>(obj: T): Partial<T> {
+    return Object.fromEntries(
+        Object.entries(obj).filter(([, v]) => v !== '' && v !== undefined)
+    ) as Partial<T>
+}
+
 function genCct8() {
     return String(Math.floor(Math.random() * 1e8)).padStart(8, '0')
 }
@@ -159,8 +166,9 @@ export class CtePartesBuilder {
             Comp: [{ xNome: String(xNome).slice(0, 15), vComp: total }],
         }
 
-        // se vierem overrides “full”
-        this.vPrest = mergeNested(base as any, override as any)
+        // Remove os campos especiais antes de fazer merge para não vazar “total”/”xNome” no payload
+        const { total: _t, xNome: _x, ...rest } = (override as any) ?? {}
+        this.vPrest = mergeNested(base as any, rest as any)
         return this
     }
 
@@ -182,7 +190,8 @@ export class CtePartesBuilder {
             },
         }
 
-        this.imp = mergeNested(base as any, override as any)
+        const { vBC: _v, pICMS: _p, vICMS: _i, ...rest } = (override as any) ?? {}
+        this.imp = mergeNested(base as any, rest as any)
         return this
     }
 
@@ -230,7 +239,7 @@ export class CtePartesBuilder {
             IE: '000004925301',
             CRT: 3,
         }
-        this.emit = mergeNested(base as any, override as any)
+        this.emit = mergeNested(base as any, omitEmpty((override ?? {}) as any) as any)
         return this
     }
 
@@ -238,14 +247,14 @@ export class CtePartesBuilder {
         const emit = this.nfe?.emit
         const isCnpj = !!emit?.CNPJ
 
-        const base = {
+        const base = omitEmpty({
             CNPJ: isCnpj ? String(emit?.CNPJ ?? '').replace(/\D/g, '') : undefined,
             CPF: !isCnpj ? String(emit?.CPF ?? '').replace(/\D/g, '') : undefined,
             IE: emit?.IE ?? '',
             xNome: emit?.xNome ?? '',
             xFant: emit?.xFant ?? undefined,
             fone: emit?.enderEmit?.fone ?? undefined,
-            enderReme: {
+            enderReme: omitEmpty({
                 xLgr: emit?.enderEmit?.xLgr ?? '',
                 nro: emit?.enderEmit?.nro ?? '',
                 xCpl: emit?.enderEmit?.xCpl ?? undefined,
@@ -256,9 +265,9 @@ export class CtePartesBuilder {
                 UF: emit?.enderEmit?.UF ?? '',
                 cPais: '1058',
                 xPais: 'BRASIL',
-            },
+            }),
             email: emit?.email ?? undefined,
-        }
+        })
 
         this.rem = mergeNested(base as any, override as any)
         return this
@@ -268,14 +277,14 @@ export class CtePartesBuilder {
         const dest = this.nfe?.dest
         const isCnpj = !!dest?.CNPJ
 
-        const base = {
+        const base = omitEmpty({
             CNPJ: isCnpj ? String(dest?.CNPJ ?? '').replace(/\D/g, '') : undefined,
             CPF: !isCnpj ? String(dest?.CPF ?? '').replace(/\D/g, '') : undefined,
             IE: dest?.IE ?? '',
             xNome: dest?.xNome ?? '',
             fone: dest?.fone ?? undefined,
             ISUF: dest?.ISUF ?? undefined,
-            enderDest: {
+            enderDest: omitEmpty({
                 xLgr: dest?.enderDest?.xLgr ?? '',
                 nro: dest?.enderDest?.nro ?? '',
                 xCpl: dest?.enderDest?.xCpl ?? undefined,
@@ -286,9 +295,9 @@ export class CtePartesBuilder {
                 UF: dest?.enderDest?.UF ?? '',
                 cPais: '1058',
                 xPais: 'BRASIL',
-            },
+            }),
             email: dest?.email ?? undefined,
-        }
+        })
 
         this.dest = mergeNested(base as any, override as any)
         return this

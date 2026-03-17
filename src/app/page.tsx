@@ -1,16 +1,17 @@
 "use client"
 
-import React, { ChangeEvent, useEffect, useState } from "react";
+import React, { ChangeEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import Link from "next/link";
+import { CteEmitidos } from "@/components/cte-emitidos";
+import { ConfiguracoesEmpresa } from "@/components/configuracoes-empresa";
 import Indice from './indice.json'
 import axios from "axios";
 import xml2js from "xml2js";
-import { emitirCte, listarCte } from "@/services/cte";
-import { CtePartesBuilder } from "@/lib/cte/cte";
 
 export default function Home() {
   const [origem, setOrigem] = useState<string>('')
@@ -24,184 +25,81 @@ export default function Home() {
   const [eixos, setEixos] = useState<string>('4')
   const [peso, setPeso] = useState<string>('')
   const [pesoTotalCarga, setPesoTotalCarga] = useState<string>('');
-  const [jsonData, setJsonData] = useState(null);
   const [nfe, setNfe] = useState<any>(null)
   const [resultado, setResultado] = useState({ base: 0, icms: 0, icmsReduzido: 0, reducao: 0, ccd: 0, cc: 0 })
-  const [cteManual, setCteManual] = useState({
-    proPred: 'MADEIRA',
-    toma: '3',
-    xObs: 'TRANSPORTE SUBCONTRATADO ...',
-  })
-
-  const [ctePreview, setCtePreview] = useState<any>(null)
-
-  useEffect(() => {
-    if (!nfe) return
-
-    try {
-      const payload = new CtePartesBuilder(nfe)
-        .builIde({ toma3: { toma: Number(cteManual.toma) as any } })
-        .buildCompl({ xObs: cteManual.xObs })
-        .buildvPrest({ total: resultado.base / 10000, xNome: 'Valor do Frete' })
-        .buildImp({ vBC: resultado.base / 10000, pICMS: 12, vICMS: resultado.icms / 10000 })
-        .buildInfCteNorm({ infCarga: { proPred: cteManual.proPred } })
-        .buildEmitente() // usa cadastro
-        .buildRemetente()
-        .buildDestinatario()
-        .build()
-
-      setCtePreview(payload)
-    } catch (e) {
-      setCtePreview(null)
-    }
-  }, [nfe, cteManual, resultado])
-
-
-  const handleEmitirCte = async () => {
-
-    const payload = new CtePartesBuilder(nfe)
-      .builIde()
-      .buildCompl()
-      .buildvPrest()
-      .buildImp()
-      .buildInfCteNorm()
-      .buildEmitente()
-      .buildRemetente()
-      .buildDestinatario()
-      .build()
-
-
-    try {
-
-      const response = await emitirCte(payload)
-
-    } catch (error: any) {
-      console.error('CTE_EMITIR_ERROR =>', error?.response?.data || error?.message)
-      alert('Falha ao emitir CT-e. Veja o console.')
-    }
-  }
-
-
   const readXml = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const content = e.target?.result;
-
-        if (!content) return
-        // Usando xml2js para converter o XML para JSON
-        xml2js.parseString(content, { explicitArray: false }, (err, result) => {
-          if (err) {
-            console.error("Erro ao converter XML para JSON:", err);
-          } else {
-            const { NFe } = result.nfeProc
-            const { dest, emit, ide, transp } = NFe.infNFe
-
-            let pesoLiquido = 0;
-
-            if (transp?.vol) {
-
-              const volumes = Array.isArray(transp.vol) ? transp.vol : [transp.vol];
-              pesoLiquido = volumes.reduce((acc: any, vol: any) => acc + (Number(vol.pesoL) || 0), 0);
-            }
-
-            const newNfe = {
-              destino: `${dest.enderDest.xMun} - ${dest.enderDest.UF}`,
-              origem: `${emit.enderEmit.xMun} - ${emit.enderEmit.UF}`,
-              emit,
-              dest,
-              ide,
-              peso: String(pesoLiquido).replace(/\D/g, ''),
-              raw: result
-            }
-            setNfe(newNfe)
-            setDestino(newNfe.destino)
-            setOrigem(newNfe.origem)
-            setPeso(newNfe.peso)
-            setJsonData(result);
-          }
-        });
-      };
-
-      reader.readAsText(file);
-    }
+    if (!file) return
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result;
+      if (!content) return
+      xml2js.parseString(content, { explicitArray: false }, (err, result) => {
+        if (err) { console.error("Erro ao converter XML para JSON:", err); return }
+        const { NFe } = result.nfeProc
+        const { dest, emit, ide, transp } = NFe.infNFe
+        let pesoLiquido = 0;
+        if (transp?.vol) {
+          const volumes = Array.isArray(transp.vol) ? transp.vol : [transp.vol];
+          pesoLiquido = volumes.reduce((acc: any, vol: any) => acc + (Number(vol.pesoL) || 0), 0);
+        }
+        const newNfe = {
+          destino: `${dest.enderDest.xMun} - ${dest.enderDest.UF}`,
+          origem: `${emit.enderEmit.xMun} - ${emit.enderEmit.UF}`,
+          emit, dest, ide,
+          peso: String(pesoLiquido).replace(/\D/g, ''),
+          raw: result
+        }
+        setNfe(newNfe)
+        setDestino(newNfe.destino)
+        setOrigem(newNfe.origem)
+        setPeso(newNfe.peso)
+      });
+    };
+    reader.readAsText(file);
   }
-
 
   const fetchDistance = async () => {
+    if (!origem || !destino) return
     try {
-      if (!origem || !destino) return
-      const { data, status } = await axios.post('/api/', {
-        body: {
-          origem,
-          destino,
-          distancia
-        }
-      })
+      const { data } = await axios.post('/api/', { body: { origem, destino, distancia } })
       setOrigem(data.origin_addresses)
       setDestino(data.destination_addresses)
-      const distanceValue = data.rows[0].elements[0].distance.value;
-      setDistancia(String(Number(Math.round(distanceValue / 1000))));
-    } catch (error) {
-      console.log(error)
-    }
+      setDistancia(String(Math.round(data.rows[0].elements[0].distance.value / 1000)));
+    } catch (error) { console.log(error) }
   }
+
   const SCALE = 10000;
   const sumValue = () => {
     const data = Indice.find(item => item.tipo == tipoCarga);
-
     if (!data) return;
-
-
     const ccd = (data.coeficientes.ccd as any)[eixos];
     const cc = (data.coeficientes.cc as any)[eixos];
-
-
     const ccdInt = Math.round(Number(ccd) * SCALE);
     const ccInt = Math.round(Number(cc) * SCALE);
-
-
     const distanciaInt = Math.round(Number(distancia));
-
-
-    const baseCcdInt = ccdInt * distanciaInt; // unidades 1/10000 R$
-    const totalInt = baseCcdInt + ccInt;      // soma em mesma unidade
-
-
+    const baseCcdInt = ccdInt * distanciaInt;
+    const totalInt = baseCcdInt + ccInt;
     const totalReais = totalInt / SCALE;
-
     let baseDeCalculoFinal = 0;
-
     if (multiplasNfe) {
       const formatedPesoTotal = Math.round(Number(pesoTotalCarga))
-      const baseProporcionalPeso = Number(totalReais / formatedPesoTotal)
-      baseDeCalculoFinal = Math.round((Number(peso) * baseProporcionalPeso) * SCALE)
+      baseDeCalculoFinal = Math.round((Number(peso) * Number(totalReais / formatedPesoTotal)) * SCALE)
     } else {
-      baseDeCalculoFinal = Math.round((Number(totalReais) * SCALE))
+      baseDeCalculoFinal = Math.round(Number(totalReais) * SCALE)
     }
-    let icms = Math.round(baseDeCalculoFinal * 0.12);
-    let reducao = Math.round(icms * 0.20);
-    let icmsReduzido = icms - reducao;
-    setResultado({
-      base: baseDeCalculoFinal,
-      cc: ccInt,
-      ccd: ccdInt,
-      icms: icms,
-      icmsReduzido,
-      reducao
-    })
-
+    const icms = Math.round(baseDeCalculoFinal * 0.12);
+    const reducao = Math.round(icms * 0.20);
+    const icmsReduzido = icms - reducao;
+    setResultado({ base: baseDeCalculoFinal, cc: ccInt, ccd: ccdInt, icms, icmsReduzido, reducao })
   }
-  const gerarDare = async () => {
-    if (!nfe.emit || !nfe.dest) return;
 
+  const gerarDare = async () => {
+    if (!nfe?.emit || !nfe?.dest) return;
     try {
       const response = await fetch('/api/dare', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invoiceNumber: `${nfe.ide?.nNF}`,
           recipient: nfe.dest?.xNome,
@@ -213,358 +111,237 @@ export default function Home() {
           receiptCode: '1414'
         })
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to generate PDF');
-      }
-
-      // Get the PDF blob
+      if (!response.ok) throw new Error('Failed to generate PDF');
       const blob = await response.blob();
-
-      // Create download link
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = 'document.pdf';
-      document.body.appendChild(a);
-      a.click();
+      a.href = url; a.download = 'document.pdf';
+      document.body.appendChild(a); a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-
-    } catch (error) {
-      console.error("An error occurred while generating the PDF:", error);
-      // Handle error (e.g., show error message to user)
-    }
+    } catch (error) { console.error("Erro ao gerar PDF:", error) }
   };
-
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="max-w-6xl mx-auto px-6 py-10">
-        {/* Top bar */}
-        <header className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white font-bold">F</div>
-            <div>
-              <h1 className="text-2xl font-semibold">Calculadora de Frete</h1>
-              <p className="text-sm text-slate-500">Rápido — simples — conforme ANTT</p>
-            </div>
+      {/* Topbar */}
+      <header className="sticky top-0 z-10 bg-white border-b shadow-sm">
+        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
+            F
           </div>
-        </header>
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          <section className="lg:col-span-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="col-span-2 bg-white rounded-2xl p-6 shadow-sm border">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-medium">Parâmetros da Viagem</h2>
-                <div className="text-sm text-slate-400">Campos mínimos para cálculo</div>
-              </div>
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-1 gap-3 items-end">
-                  <div className="flex flex-col">
-                    <Label className="font-bold" htmlFor="cidade-origem">Carregar XML</Label>
-                    <Input type="file" onChange={readXml} name='xml'></Input>
-                  </div>
+          <span className="font-semibold text-slate-800">FreteCalc</span>
+        </div>
+      </header>
 
+      <div className="max-w-6xl mx-auto px-6 py-6">
+        <Tabs defaultValue="calculadora">
+          <TabsList className="mb-6">
+            <TabsTrigger value="emitir-cte">Emitir CT-e</TabsTrigger>
+            <TabsTrigger value="calculadora">Calculadora de ICMS</TabsTrigger>
+            <TabsTrigger value="configuracoes">Configurações da Empresa</TabsTrigger>
+          </TabsList>
 
+          {/* ── Calculadora de ICMS ── */}
+          <TabsContent value="calculadora">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Formulário */}
+              <div className="col-span-2 bg-white rounded-2xl p-6 shadow-sm border">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-medium">Parâmetros da Viagem</h2>
+                  <span className="text-sm text-slate-400">Campos mínimos para cálculo</span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-
+                <div className="space-y-4">
                   <div>
-                    <Label htmlFor="origem">Origem (Cidade)</Label>
-                    <Input onChange={(e) => setOrigem(e.target.value)} value={origem} id="origem" placeholder="Ex: Candeias do Jamari - RO" />
+                    <Label className="font-bold" htmlFor="xml">Carregar XML</Label>
+                    <Input type="file" onChange={readXml} name="xml" />
                   </div>
 
-                  <div>
-                    <Label htmlFor="destino">Destino (Cidade)</Label>
-                    <Input onChange={(e) => setDestino(e.target.value)} value={destino} id="destino" placeholder="Ex: Itajaí - SC" />
-                  </div>
-
-                  <div className="flex justify-center md:justify-start">
-                    <Button onClick={fetchDistance} value={distancia} className="w-full md:w-auto self-end">Buscar Distância</Button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <Label htmlFor="distancia">Distância (km)</Label>
-                    <Input
-                      value={distancia}
-                      id="distancia"
-                      placeholder="Ex: 3500"
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        // Permite apenas números
-                        if (/^\d*$/.test(value)) {
-                          setDistancia(value);
-                        }
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="eixos">Eixos carregados</Label>
-                    <Select onValueChange={(e) => setEixos(e)} value={eixos}>
-                      <SelectTrigger id="eixos" className="w-full">
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="2">2 eixos</SelectItem>
-                        <SelectItem value="3">3 eixos</SelectItem>
-                        <SelectItem value="4">4 eixos</SelectItem>
-                        <SelectItem value="5">5 eixos</SelectItem>
-                        <SelectItem value="6">6 eixos</SelectItem>
-                        <SelectItem value="7">7 eixos</SelectItem>
-                        <SelectItem value="8">8 eixos</SelectItem>
-                        <SelectItem value="9">9 eixos</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-1 gap-3">
-                  <div>
-                    <label className="flex items-center cursor-pointer w-full">
-                      <span className="text-slate-700 select-none">Carga Parcial</span>
-                      <input
-                        type="checkbox"
-                        checked={multiplasNfe}
-                        onChange={() => setMultiplasNfe((state) => !state)}
-                        className="sr-only"
-                      />
-                      <div className={`w-6 h-6 flex-shrink-0 rounded-lg border border-slate-300 flex items-center justify-center
-                     transition-colors duration-200
-                     ${multiplasNfe ? 'bg-sky-600 border-sky-600' : 'bg-white'}`}>
-                        {multiplasNfe && (
-                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </div>
-                    </label>
-                  </div>
-                  <div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
                     <div>
-                      <Label htmlFor="pesoTotalCarga">Peso Total Carga (KG)</Label>
+                      <Label htmlFor="origem">Origem (Cidade)</Label>
+                      <Input onChange={(e) => setOrigem(e.target.value)} value={origem} id="origem" placeholder="Ex: Candeias do Jamari - RO" />
+                    </div>
+                    <div>
+                      <Label htmlFor="destino">Destino (Cidade)</Label>
+                      <Input onChange={(e) => setDestino(e.target.value)} value={destino} id="destino" placeholder="Ex: Itajaí - SC" />
+                    </div>
+                    <Button onClick={fetchDistance} className="self-end">Buscar Distância</Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="distancia">Distância (km)</Label>
                       <Input
-                        value={pesoTotalCarga}
-                        id="pesoTotalCarga"
-                        disabled={!multiplasNfe}
-                        placeholder="Ex: 3500"
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          // Permite apenas números
-                          if (/^\d*$/.test(value)) {
-                            setPesoTotalCarga(value);
-                          }
-                        }}
+                        value={distancia} id="distancia" placeholder="Ex: 3500"
+                        onChange={(e) => { if (/^\d*$/.test(e.target.value)) setDistancia(e.target.value) }}
                       />
                     </div>
                     <div>
-                      <Label htmlFor="distancia">Peso Liquido (KG)</Label>
-                      <Input
-                        value={peso}
-                        id="peso"
-                        disabled={!multiplasNfe}
-                        placeholder="Ex: 3500"
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          // Permite apenas números
-                          if (/^\d*$/.test(value)) {
-                            setPeso(value);
-                          }
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="tipo">Tipo de carga</Label>
-                    <Select value={tipoCarga} onValueChange={(e) => setTipoCarga(e)}>
-                      <SelectTrigger id="tipo" className="w-full">
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="geral">Geral</SelectItem>
-                        <SelectItem value="granel_solido">Granel Solido</SelectItem>
-                        <SelectItem value="granel_liquido">Granel Liquido</SelectItem>
-                        <SelectItem value="frigorificada_aquecida">Frigorificada ou Aquecida</SelectItem>
-                        <SelectItem value="conteinerizada">Conteinerizada</SelectItem>
-                        <SelectItem value="neogranel">Neogranel</SelectItem>
-                        <SelectItem value="perigosa_granel_solido">Perigosa Granel Solido</SelectItem>
-                        <SelectItem value="perigosa_granel_liquido">Perigosa Granel Liquido</SelectItem>
-                        <SelectItem value="perigosa_frigorificada_aquecida">Perigosa Frigorificada ou Aquecida</SelectItem>
-                        <SelectItem value="perigosa_conteinerizada">Perigosa Conteinerizada</SelectItem>
-                        <SelectItem value="perigosa_carga_geral">Perigosa Carga Geral</SelectItem>
-                        <SelectItem value="carga_granel_pressurizada">Carga Granel Pressurizada</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1">
-                  <label className="flex items-center justify-between cursor-pointer w-full">
-                    {/* Texto */}
-                    <span className="text-slate-700 select-none">Retorno vazio</span>
-
-                    {/* Checkbox customizado */}
-                    <div className="relative">
-                      <input
-                        type="checkbox"
-                        checked={tipoViagem}
-                        onChange={() => setTipoViagem((state) => !state)}
-                        className="sr-only"
-                      />
-                      <div
-                        className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-colors duration-200
-                        ${tipoViagem ? 'bg-sky-600 border-sky-600' : 'bg-white border-slate-300'}`}
-                      >
-                        {tipoViagem && (
-                          <svg
-                            className="w-3 h-3 text-white"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            viewBox="0 0 24 24"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </div>
-                    </div>
-                  </label>
-
-                  <label className="flex items-center justify-between cursor-pointer w-full">
-                    <span className="text-slate-700 select-none">Composição veicular</span>
-                    <input
-                      type="checkbox"
-                      checked={composicaoVeicular}
-                      onChange={() => setComposicaoVeicular((state) => !state)}
-                      className="sr-only"
-                    />
-                    <div className={`w-6 h-6 flex-shrink-0 rounded-lg border border-slate-300 flex items-center justify-center
-                     transition-colors duration-200
-                     ${composicaoVeicular ? 'bg-sky-600 border-sky-600' : 'bg-white'}`}>
-                      {composicaoVeicular && (
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </div>
-
-                  </label>
-                  <label className="flex items-center justify-between cursor-pointer w-full">
-                    <span className="text-slate-700 select-none">Alto desempenho</span>
-                    <input
-                      type="checkbox"
-                      checked={altoDesempenho}
-                      onChange={() => setAltoDesempenho((state) => !state)}
-                      className="sr-only"
-                    />
-                    <div className={`w-6 h-6 flex-shrink-0 rounded-lg border border-slate-300 flex items-center justify-center
-                     transition-colors duration-200
-                     ${altoDesempenho ? 'bg-sky-600 border-sky-600' : 'bg-white'}`}>
-                      {altoDesempenho && (
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </div>
-                  </label>
-
-                </div>
-                <div className="flex items-center gap-3 pt-2">
-                  <Button onClick={sumValue}>Calcular</Button>
-                  <Button variant="ghost">Limpar</Button>
-                </div>
-              </div>
-            </div>
-            {/* Painel de resultado (ocupando 1 coluna) */}
-            <aside className="col-span-1 bg-white rounded-2xl p-6 shadow-sm border flex flex-col gap-4">
-              <div>
-                <h3 className="text-sm text-slate-500">Resultado</h3>
-                <div className="mt-3">
-                  <div className="text-xs text-slate-400">Frete mínimo</div>
-                  <div className="text-3xl font-semibold">{formatReais(resultado.base)}</div>
-                </div>
-              </div>
-              <div className="pt-2 border-t">
-                <div className="text-xs text-slate-400">Detalhes</div>
-                <ul className="mt-2 text-sm text-slate-700 space-y-1">
-                  <li>Distância: {distancia} km</li>
-                  <li>Eixos: {eixos}</li>
-                  <li>Base de Calculo {formatReais(resultado.base)}</li>
-                  <li>ICMS 12% {formatReais(resultado.icms)}</li>
-                  <li>Red. 20%{formatReais(resultado.reducao)}</li>
-                  <li>ICMS Reduzido 20% {formatReais(resultado.icmsReduzido)}</li>
-                  <li>Coeficiente CCD: {formatReais(resultado.ccd)} R$/km</li>
-                  <li>Coeficiente CC: {formatReais(resultado.cc)} </li>
-                  <li>BC: {formatReais(resultado.base)} x 12% = {formatReais(resultado.icms)} - RED DE 20% = {formatReais(resultado.icmsReduzido)} </li>
-                </ul>
-              </div>
-              <div className="space-y-2  flex flex-col">
-                <Button onClick={gerarDare} className="w-full">Gerar Dare</Button>
-                <Button className="w-full">Copiar resultado</Button>
-                <Button onClick={handleEmitirCte} className="w-full" variant="outline">
-                  Emitir CT-e (do XML)
-                </Button>
-
-                <div className="rounded-xl border p-3 bg-slate-50">
-                  <div className="text-sm font-medium mb-2">Revisão CT-e</div>
-
-                  <div className="space-y-2">
-                    <div>
-                      <Label>Produto predominante</Label>
-                      <Input
-                        value={cteManual.proPred}
-                        onChange={(e) => setCteManual((s) => ({ ...s, proPred: e.target.value }))}
-                        placeholder="Ex: MADEIRA"
-                      />
-                    </div>
-
-                    <div>
-                      <Label>Tomador (toma3)</Label>
-                      <Select
-                        value={cteManual.toma}
-                        onValueChange={(v) => setCteManual((s) => ({ ...s, toma: v }))}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
+                      <Label htmlFor="eixos">Eixos carregados</Label>
+                      <Select onValueChange={setEixos} value={eixos}>
+                        <SelectTrigger id="eixos" className="w-full"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="0">0 - Remetente</SelectItem>
-                          <SelectItem value="1">1 - Expedidor</SelectItem>
-                          <SelectItem value="2">2 - Recebedor</SelectItem>
-                          <SelectItem value="3">3 - Destinatário</SelectItem>
+                          {['2','3','4','5','6','7','8','9'].map(n => (
+                            <SelectItem key={n} value={n}>{n} eixos</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <Checkbox checked={multiplasNfe} onChange={() => setMultiplasNfe(s => !s)} />
+                      <span className="text-slate-700 select-none">Carga Parcial</span>
+                    </label>
+
+                    {multiplasNfe && (
+                      <div className="grid grid-cols-2 gap-3 pl-7">
+                        <div>
+                          <Label htmlFor="pesoTotalCarga">Peso Total Carga (KG)</Label>
+                          <Input
+                            value={pesoTotalCarga} id="pesoTotalCarga" placeholder="Ex: 3500"
+                            onChange={(e) => { if (/^\d*$/.test(e.target.value)) setPesoTotalCarga(e.target.value) }}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="peso">Peso Líquido (KG)</Label>
+                          <Input
+                            value={peso} id="peso" placeholder="Ex: 3500"
+                            onChange={(e) => { if (/^\d*$/.test(e.target.value)) setPeso(e.target.value) }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <Label htmlFor="tipo">Tipo de carga</Label>
+                      <Select value={tipoCarga} onValueChange={setTipoCarga}>
+                        <SelectTrigger id="tipo" className="w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="geral">Geral</SelectItem>
+                          <SelectItem value="granel_solido">Granel Sólido</SelectItem>
+                          <SelectItem value="granel_liquido">Granel Líquido</SelectItem>
+                          <SelectItem value="frigorificada_aquecida">Frigorificada ou Aquecida</SelectItem>
+                          <SelectItem value="conteinerizada">Conteinerizada</SelectItem>
+                          <SelectItem value="neogranel">Neogranel</SelectItem>
+                          <SelectItem value="perigosa_granel_solido">Perigosa Granel Sólido</SelectItem>
+                          <SelectItem value="perigosa_granel_liquido">Perigosa Granel Líquido</SelectItem>
+                          <SelectItem value="perigosa_frigorificada_aquecida">Perigosa Frigorificada ou Aquecida</SelectItem>
+                          <SelectItem value="perigosa_conteinerizada">Perigosa Conteinerizada</SelectItem>
+                          <SelectItem value="perigosa_carga_geral">Perigosa Carga Geral</SelectItem>
+                          <SelectItem value="carga_granel_pressurizada">Carga Granel Pressurizada</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
 
-                    <div>
-                      <Label>Observação (subcontratação)</Label>
-                      <Input
-                        value={cteManual.xObs}
-                        onChange={(e) => setCteManual((s) => ({ ...s, xObs: e.target.value }))}
-                        placeholder="Texto padrão..."
-                      />
-                    </div>
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="text-slate-700 select-none">Retorno vazio</span>
+                      <Checkbox checked={tipoViagem} onChange={() => setTipoViagem(s => !s)} />
+                    </label>
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="text-slate-700 select-none">Composição veicular</span>
+                      <Checkbox checked={composicaoVeicular} onChange={() => setComposicaoVeicular(s => !s)} />
+                    </label>
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="text-slate-700 select-none">Alto desempenho</span>
+                      <Checkbox checked={altoDesempenho} onChange={() => setAltoDesempenho(s => !s)} />
+                    </label>
+                  </div>
 
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="w-full"
-                      onClick={() => console.log('CTE_PREVIEW =>', ctePreview)}
-                      disabled={!ctePreview}
-                    >
-                      Ver payload no console
+                  <div className="flex items-center gap-3 pt-2">
+                    <Button onClick={sumValue}>Calcular</Button>
+                    <Button variant="ghost" onClick={() => setResultado({ base: 0, icms: 0, icmsReduzido: 0, reducao: 0, ccd: 0, cc: 0 })}>
+                      Limpar
                     </Button>
                   </div>
                 </div>
               </div>
-            </aside>
-          </section>
-        </div>
 
+              {/* Resultado */}
+              <aside className="bg-white rounded-2xl p-6 shadow-sm border flex flex-col gap-4">
+                <div>
+                  <h3 className="text-sm text-slate-500">Resultado</h3>
+                  <div className="mt-3">
+                    <div className="text-xs text-slate-400">Frete mínimo</div>
+                    <div className="text-3xl font-semibold">{formatReais(resultado.base)}</div>
+                  </div>
+                </div>
+                <div className="pt-2 border-t">
+                  <div className="text-xs text-slate-400">Detalhes</div>
+                  <ul className="mt-2 text-sm text-slate-700 space-y-1">
+                    <li>Distância: {distancia} km</li>
+                    <li>Eixos: {eixos}</li>
+                    <li>Base de Cálculo: {formatReais(resultado.base)}</li>
+                    <li>ICMS 12%: {formatReais(resultado.icms)}</li>
+                    <li>Red. 20%: {formatReais(resultado.reducao)}</li>
+                    <li>ICMS Reduzido: {formatReais(resultado.icmsReduzido)}</li>
+                    <li>CCD: {formatReais(resultado.ccd)} R$/km</li>
+                    <li>CC: {formatReais(resultado.cc)}</li>
+                    <li className="pt-1 text-xs text-slate-500">
+                      BC {formatReais(resultado.base)} × 12% = {formatReais(resultado.icms)} − Red 20% = {formatReais(resultado.icmsReduzido)}
+                    </li>
+                  </ul>
+                </div>
+                <Button onClick={gerarDare} className="w-full">Gerar DARE</Button>
+              </aside>
+            </div>
+          </TabsContent>
+
+          {/* ── Emitir CT-e ── */}
+          <TabsContent value="emitir-cte">
+            <div className="bg-white rounded-2xl p-6 shadow-sm border">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-medium">CT-es Emitidos</h2>
+                <div className="flex gap-2">
+                  <Link href="/cte/emitir-rapido">
+                    <Button variant="outline" className="gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      Emissão Expressa
+                    </Button>
+                  </Link>
+                  <Link href="/cte/emitir">
+                    <Button className="gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                      Emitir CT-e
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+              <CteEmitidos />
+            </div>
+          </TabsContent>
+
+          {/* ── Configurações ── */}
+          <TabsContent value="configuracoes">
+            <ConfiguracoesEmpresa />
+          </TabsContent>
+        </Tabs>
       </div>
     </main>
   );
 }
 
-const formatReais = (value: number) => {
-  return (value / 10000).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-}
+const formatReais = (value: number) =>
+  (value / 10000).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
+function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+  return (
+    <div
+      onClick={onChange}
+      className={`w-6 h-6 flex-shrink-0 rounded-lg border flex items-center justify-center cursor-pointer transition-colors
+        ${checked ? 'bg-sky-600 border-sky-600' : 'bg-white border-slate-300'}`}
+    >
+      {checked && (
+        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+      )}
+    </div>
+  )
+}
