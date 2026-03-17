@@ -1,6 +1,6 @@
 "use client"
 
-import React, { ChangeEvent, useState } from "react";
+import React, { ChangeEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Indice from './indice.json'
 import axios from "axios";
 import xml2js from "xml2js";
+import { emitirCte, listarCte } from "@/services/cte";
+import { CtePartesBuilder } from "@/lib/cte/cte";
 
 export default function Home() {
   const [origem, setOrigem] = useState<string>('')
@@ -25,6 +27,60 @@ export default function Home() {
   const [jsonData, setJsonData] = useState(null);
   const [nfe, setNfe] = useState<any>(null)
   const [resultado, setResultado] = useState({ base: 0, icms: 0, icmsReduzido: 0, reducao: 0, ccd: 0, cc: 0 })
+  const [cteManual, setCteManual] = useState({
+    proPred: 'MADEIRA',
+    toma: '3',
+    xObs: 'TRANSPORTE SUBCONTRATADO ...',
+  })
+
+  const [ctePreview, setCtePreview] = useState<any>(null)
+
+  useEffect(() => {
+    if (!nfe) return
+
+    try {
+      const payload = new CtePartesBuilder(nfe)
+        .builIde({ toma3: { toma: Number(cteManual.toma) as any } })
+        .buildCompl({ xObs: cteManual.xObs })
+        .buildvPrest({ total: resultado.base / 10000, xNome: 'Valor do Frete' })
+        .buildImp({ vBC: resultado.base / 10000, pICMS: 12, vICMS: resultado.icms / 10000 })
+        .buildInfCteNorm({ infCarga: { proPred: cteManual.proPred } })
+        .buildEmitente() // usa cadastro
+        .buildRemetente()
+        .buildDestinatario()
+        .build()
+
+      setCtePreview(payload)
+    } catch (e) {
+      setCtePreview(null)
+    }
+  }, [nfe, cteManual, resultado])
+
+
+  const handleEmitirCte = async () => {
+
+    const payload = new CtePartesBuilder(nfe)
+      .builIde()
+      .buildCompl()
+      .buildvPrest()
+      .buildImp()
+      .buildInfCteNorm()
+      .buildEmitente()
+      .buildRemetente()
+      .buildDestinatario()
+      .build()
+
+
+    try {
+
+      const response = await emitirCte(payload)
+
+    } catch (error: any) {
+      console.error('CTE_EMITIR_ERROR =>', error?.response?.data || error?.message)
+      alert('Falha ao emitir CT-e. Veja o console.')
+    }
+  }
+
 
   const readXml = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -56,7 +112,8 @@ export default function Home() {
               emit,
               dest,
               ide,
-              peso: String(pesoLiquido).replace(/\D/g, '')
+              peso: String(pesoLiquido).replace(/\D/g, ''),
+              raw: result
             }
             setNfe(newNfe)
             setDestino(newNfe.destino)
@@ -179,6 +236,8 @@ export default function Home() {
       // Handle error (e.g., show error message to user)
     }
   };
+
+
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
       <div className="max-w-6xl mx-auto px-6 py-10">
@@ -440,6 +499,61 @@ export default function Home() {
               <div className="space-y-2  flex flex-col">
                 <Button onClick={gerarDare} className="w-full">Gerar Dare</Button>
                 <Button className="w-full">Copiar resultado</Button>
+                <Button onClick={handleEmitirCte} className="w-full" variant="outline">
+                  Emitir CT-e (do XML)
+                </Button>
+
+                <div className="rounded-xl border p-3 bg-slate-50">
+                  <div className="text-sm font-medium mb-2">Revisão CT-e</div>
+
+                  <div className="space-y-2">
+                    <div>
+                      <Label>Produto predominante</Label>
+                      <Input
+                        value={cteManual.proPred}
+                        onChange={(e) => setCteManual((s) => ({ ...s, proPred: e.target.value }))}
+                        placeholder="Ex: MADEIRA"
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Tomador (toma3)</Label>
+                      <Select
+                        value={cteManual.toma}
+                        onValueChange={(v) => setCteManual((s) => ({ ...s, toma: v }))}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Selecione" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">0 - Remetente</SelectItem>
+                          <SelectItem value="1">1 - Expedidor</SelectItem>
+                          <SelectItem value="2">2 - Recebedor</SelectItem>
+                          <SelectItem value="3">3 - Destinatário</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label>Observação (subcontratação)</Label>
+                      <Input
+                        value={cteManual.xObs}
+                        onChange={(e) => setCteManual((s) => ({ ...s, xObs: e.target.value }))}
+                        placeholder="Texto padrão..."
+                      />
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="w-full"
+                      onClick={() => console.log('CTE_PREVIEW =>', ctePreview)}
+                      disabled={!ctePreview}
+                    >
+                      Ver payload no console
+                    </Button>
+                  </div>
+                </div>
               </div>
             </aside>
           </section>
