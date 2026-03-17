@@ -126,6 +126,11 @@ export class CtePartesBuilder {
             merged.cCT = genCct8()
         }
 
+        // ✅ nCT explícito (override tem prioridade sobre o base hardcoded)
+        if ((override as any)?.nCT !== undefined && (override as any)?.nCT !== null) {
+            merged.nCT = Number((override as any).nCT)
+        }
+
         // ✅ se quiser permitir override do "toma" facilmente
         if (override?.toma3?.toma !== undefined) {
             merged.toma3 = { toma: override.toma3.toma as Toma3 }

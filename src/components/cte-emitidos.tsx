@@ -3,6 +3,7 @@
 import { imprimirCte } from '@/services/cte'
 import axios from 'axios'
 import { useEffect, useState } from 'react'
+import { useEmpresaConfig } from '@/components/configuracoes-empresa'
 import {
     ColumnDef,
     flexRender,
@@ -47,6 +48,7 @@ const STATUS_CLASS: Record<string, string> = {
 }
 
 export function CteEmitidos() {
+    const { config: empresaConfig, loaded: configLoaded } = useEmpresaConfig()
     const [top] = useState(20)
     const [skip, setSkip] = useState(0)
     const [loading, setLoading] = useState(false)
@@ -58,7 +60,7 @@ export function CteEmitidos() {
     const canPrev = skip > 0
     const canNext = rows.length === top
 
-    useEffect(() => { load() }, [skip])
+    useEffect(() => { if (configLoaded && empresaConfig.cnpj) load() }, [skip, configLoaded])
 
     async function load() {
         setLoading(true)
@@ -66,7 +68,7 @@ export function CteEmitidos() {
         try {
             const { data } = await axios.get<ListCteResponse>('/api/nuvem/cte/', {
                 params: {
-                    cpf_cnpj: '29180936000123',
+                    cpf_cnpj: empresaConfig.cnpj,
                     ambiente: 'producao',
                     $top: top,
                     $skip: skip,

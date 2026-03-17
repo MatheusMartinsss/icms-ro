@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cn } from "@/lib/utils"
 import { Inter as FontSans } from "next/font/google"
 import { Toaster } from "sonner"
+import AuthSessionProvider from "@/components/session-provider"
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -26,7 +27,9 @@ export default function RootLayout({
         "min-h-screen bg-background font-sans antialiased",
         fontSans.variable
       )}>
-        {children}
+        <AuthSessionProvider>
+          {children}
+        </AuthSessionProvider>
         <Toaster richColors position="top-right" />
       </body>
     </html>

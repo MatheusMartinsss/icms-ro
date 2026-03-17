@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { emitirCte } from '@/services/cte'
 import { CtePartesBuilder } from '@/lib/cte/cte'
 import Indice from '../../indice.json'
+import { useEmpresaConfig } from '@/components/configuracoes-empresa'
 
 type Status = 'idle' | 'loading' | 'success' | 'error'
 
@@ -76,6 +77,7 @@ function parteFromDest(dest: any): ParteForm {
 }
 
 export default function EmitirCtePage() {
+    const { config: empresa } = useEmpresaConfig()
     const [nfe, setNfe] = useState<any>(null)
     const [status, setStatus] = useState<Status>('idle')
     const [errMsg, setErrMsg] = useState('')
@@ -83,7 +85,7 @@ export default function EmitirCtePage() {
     const [rem, setRem] = useState<ParteForm>(emptyParte())
     const [dest, setDest] = useState<ParteForm>(emptyParte())
     const [toma, setToma] = useState('3')
-    const [carga, setCarga] = useState({ proPred: 'MADEIRA', peso: '', vCarga: '', rntrc: '01188553' })
+    const [carga, setCarga] = useState({ proPred: 'MADEIRA', peso: '', vCarga: '', rntrc: '' })
     const [trib, setTrib] = useState({ vTPrest: '', pICMS: '12', cst: '00' })
     const [calc, setCalc] = useState({
         show: false,
@@ -151,16 +153,10 @@ export default function EmitirCtePage() {
         if (origem && destino) fetchCalcDistance(origem, destino)
     }, [calc.show])
 
-    // Carrega config da empresa
+    // Sincroniza RNTRC com config da empresa
     useEffect(() => {
-        try {
-            const saved = localStorage.getItem('icms-ro:empresa-config')
-            if (saved) {
-                const cfg = JSON.parse(saved)
-                setCarga(s => ({ ...s, rntrc: cfg.rntrc || s.rntrc }))
-            }
-        } catch {}
-    }, [])
+        if (empresa.rntrc) setCarga(s => ({ ...s, rntrc: empresa.rntrc }))
+    }, [empresa.rntrc])
 
     const readXml = (event: ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0]
@@ -203,6 +199,11 @@ export default function EmitirCtePage() {
         setStatus('loading')
         setErrMsg('')
         try {
+            // Busca config atualizada do banco para garantir sequenciaCte correto
+            const cfgRes = await fetch('/api/empresa')
+            const cfgAtual = cfgRes.ok ? await cfgRes.json() : empresa
+            const nCT: number = cfgAtual.sequenciaCte ?? empresa.sequenciaCte ?? 1
+
             // Reconstrói o nfe com os dados editados — campos opcionais vazios viram undefined
             const clean = (v: string | undefined) => (v && v.trim() !== '' ? v : undefined)
             const nfeEditado = {
@@ -239,7 +240,7 @@ export default function EmitirCtePage() {
             }
 
             const payload = new CtePartesBuilder(nfeEditado)
-                .builIde({ toma3: { toma: Number(toma) as any } })
+                .builIde({ nCT, toma3: { toma: Number(toma) as any } })
                 .buildCompl({ xObs: obs })
                 .buildvPrest({ total: vBC, xNome: 'Valor do Frete' })
                 .buildImp({ vBC, pICMS, vICMS })
@@ -247,12 +248,10 @@ export default function EmitirCtePage() {
                     infCarga: { proPred: carga.proPred, vCarga: Number(carga.vCarga) || undefined },
                     infModal: { versaoModal: '4.00', rodo: { RNTRC: carga.rntrc } },
                 })
-                .buildEmitente((() => {
-                    try {
-                        const cfg = JSON.parse(localStorage.getItem('icms-ro:empresa-config') ?? '{}')
-                        return { CNPJ: cfg.cnpj, IE: cfg.ie }
-                    } catch { return {} }
-                })())
+                .buildEmitente({
+                    CNPJ: empresa.cnpj || undefined,
+                    IE: empresa.ie || undefined,
+                })
                 .buildRemetente()
                 .buildDestinatario()
                 .build()
@@ -261,6 +260,12 @@ export default function EmitirCtePage() {
 
             if (result?.status === 'autorizado') {
                 setStatus('success')
+                // Incrementa sequência no banco
+                await fetch('/api/empresa', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sequenciaCte: nCT + 1 }),
+                })
                 toast.success('CT-e autorizado pela SEFAZ', {
                     description: `Nº ${result.numero} · Protocolo ${result.autorizacao?.numero_protocolo ?? '—'}`,
                     duration: 8000,
