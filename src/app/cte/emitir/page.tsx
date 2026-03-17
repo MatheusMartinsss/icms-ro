@@ -203,6 +203,7 @@ export default function EmitirCtePage() {
             const cfgRes = await fetch('/api/empresa')
             const cfgAtual = cfgRes.ok ? await cfgRes.json() : empresa
             const nCT: number = cfgAtual.sequenciaCte ?? empresa.sequenciaCte ?? 1
+            const serie: number = cfgAtual.serie ?? empresa.serie ?? 99
 
             // Reconstrói o nfe com os dados editados — campos opcionais vazios viram undefined
             const clean = (v: string | undefined) => (v && v.trim() !== '' ? v : undefined)
@@ -240,7 +241,7 @@ export default function EmitirCtePage() {
             }
 
             const payload = new CtePartesBuilder(nfeEditado)
-                .builIde({ nCT, toma3: { toma: Number(toma) as any } })
+                .builIde({ nCT, serie, toma3: { toma: Number(toma) as any } })
                 .buildCompl({ xObs: obs })
                 .buildvPrest({ total: vBC, xNome: 'Valor do Frete' })
                 .buildImp({ vBC, pICMS, vICMS })

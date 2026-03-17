@@ -32,6 +32,7 @@ model EmpresaConfig {
   xMunEnv     String   @default("")
   ufEnv       String   @default("")
   sequenciaCte Int     @default(1)
+  serie        Int     @default(99)
   updatedAt   DateTime @updatedAt
 }
 

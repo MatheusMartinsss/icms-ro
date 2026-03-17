@@ -18,6 +18,7 @@ export type EmpresaConfig = {
     xMunEnv: string
     ufEnv: string
     sequenciaCte: number
+    serie: number
 }
 
 const DEFAULT_CONFIG: EmpresaConfig = {
@@ -31,6 +32,7 @@ const DEFAULT_CONFIG: EmpresaConfig = {
     xMunEnv: '',
     ufEnv: '',
     sequenciaCte: 1,
+    serie: 99,
 }
 
 // ── Masks ──────────────────────────────────────────────────────────────────
@@ -243,6 +245,20 @@ export function ConfiguracoesEmpresa() {
                             className="mt-1 font-mono"
                         />
                         <p className="text-[11px] text-slate-400 mt-1">Incrementado automaticamente a cada emissão</p>
+                    </div>
+
+                    <div>
+                        <Label htmlFor="serie">Série</Label>
+                        <Input
+                            id="serie"
+                            type="number"
+                            min={1}
+                            max={999}
+                            value={config.serie}
+                            onChange={e => setConfig(prev => ({ ...prev, serie: Math.max(1, parseInt(e.target.value) || 99) }))}
+                            className="mt-1 font-mono"
+                        />
+                        <p className="text-[11px] text-slate-400 mt-1">Série do CT-e (padrão 99)</p>
                     </div>
                 </div>
             </div>
