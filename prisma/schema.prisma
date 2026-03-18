@@ -19,8 +19,10 @@ model Empresa {
   cMunEnv      String   @default("") @map("c_mun_env")
   xMunEnv      String   @default("") @map("x_mun_env")
   ufEnv        String   @default("") @map("uf_env")
-  sequenciaCte Int      @default(1)  @map("sequencia_cte")
-  serie        Int      @default(99)
+  sequenciaCte  Int      @default(1)  @map("sequencia_cte")
+  serie         Int      @default(99)
+  sequenciaMdfe Int      @default(1)  @map("sequencia_mdfe")
+  serieMdfe     Int      @default(1)  @map("serie_mdfe")
 
   // Endereço
   nomeFantasia String   @default("") @map("nome_fantasia")
@@ -37,6 +39,7 @@ model Empresa {
 
   users      User[]
   ctes       Cte[]
+  mdfes      Mdfe[]
   parceiros  Parceiro[]
   cteEventos CteEvento[]
 
@@ -159,6 +162,34 @@ model CteEvento {
   @@index([empresaId, createdAt])
   @@index([cteId])
   @@map("cte_eventos")
+}
+
+// ─── MDF-e ────────────────────────────────────────────────────────────────────
+
+model Mdfe {
+  id        String  @id @default(cuid())
+  empresaId String  @map("empresa_id")
+  empresa   Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  status  String    @default("rascunho")
+  nMDF    Int?      @map("n_mdf")
+  serie   Int?
+  ufIni   String?   @map("uf_ini")
+  ufFim   String?   @map("uf_fim")
+  dhEmi   DateTime? @map("dh_emi")
+
+  idNuvem String? @map("id_nuvem")
+  chave   String?
+  erroMsg String? @map("erro_msg")
+
+  infMDFe Json @map("inf_mdfe")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@index([empresaId, status])
+  @@index([empresaId, createdAt])
+  @@map("mdfes")
 }
 
 // ─── Auth.js v5 ───────────────────────────────────────────────────────────────
