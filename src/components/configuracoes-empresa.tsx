@@ -238,85 +238,129 @@ export function ConfiguracoesEmpresa() {
     )
 
     return (
-        <div className="max-w-2xl space-y-6">
-            <div>
-                <h2 className="text-lg font-semibold text-slate-800">Dados da Empresa</h2>
-                <p className="text-sm text-slate-500 mt-1">Informações utilizadas na emissão do CT-e.</p>
+        <div className="space-y-6">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h2 className="text-lg font-semibold text-slate-800">Dados da Empresa</h2>
+                    <p className="text-sm text-slate-500 mt-0.5">Informações utilizadas na emissão do CT-e.</p>
+                </div>
+                <Button onClick={handleSave} disabled={saving}>
+                    {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Salvando...</> : 'Salvar configurações'}
+                </Button>
             </div>
 
-            {/* Identificação */}
-            <div className="bg-white rounded-2xl border p-6 shadow-sm space-y-4">
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Identificação</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Linha 1: Identificação + Emissão CT-e */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                    <SearchInput
-                        id="cnpj" label="CNPJ"
-                        value={maskCNPJ(config.cnpj)}
-                        onChange={handleCNPJChange}
-                        onSearch={() => lookupCNPJ(config.cnpj)}
-                        loading={lookingUpCnpj}
-                        placeholder="00.000.000/0000-00"
-                        className="font-mono"
-                        hint="Clique na lupa para preencher automaticamente"
-                    />
+                {/* Identificação — ocupa 2/3 */}
+                <div className="lg:col-span-2 bg-white rounded-2xl border p-6 shadow-sm space-y-4">
+                    <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Identificação</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 
-                    <div>
-                        <Label htmlFor="razaoSocial">Razão Social</Label>
-                        <Input id="razaoSocial" value={config.razaoSocial} className="mt-1"
-                            onChange={e => set('razaoSocial', e.target.value.toUpperCase())}
-                            placeholder="TRANSPORTE LTDA" />
+                        <div className="col-span-2">
+                            <SearchInput
+                                id="cnpj" label="CNPJ"
+                                value={maskCNPJ(config.cnpj)}
+                                onChange={handleCNPJChange}
+                                onSearch={() => lookupCNPJ(config.cnpj)}
+                                loading={lookingUpCnpj}
+                                placeholder="00.000.000/0000-00"
+                                className="font-mono"
+                                hint="Lupa preenche automaticamente"
+                            />
+                        </div>
+
+                        <div className="col-span-2">
+                            <Label htmlFor="ie">Inscrição Estadual</Label>
+                            <Input id="ie" value={config.ie} className="mt-1 font-mono"
+                                onChange={e => set('ie', unmask(e.target.value))}
+                                placeholder="000000000000" />
+                        </div>
+
+                        <div className="col-span-2 md:col-span-3">
+                            <Label htmlFor="razaoSocial">Razão Social</Label>
+                            <Input id="razaoSocial" value={config.razaoSocial} className="mt-1"
+                                onChange={e => set('razaoSocial', e.target.value.toUpperCase())}
+                                placeholder="TRANSPORTE LTDA" />
+                        </div>
+
+                        <div>
+                            <Label htmlFor="crt">CRT</Label>
+                            <Input id="crt" value={config.crt} className="mt-1" maxLength={1}
+                                onChange={e => set('crt', unmask(e.target.value))}
+                                placeholder="3" />
+                        </div>
+
+                        <div className="col-span-2 md:col-span-3">
+                            <Label htmlFor="nomeFantasia">Nome Fantasia</Label>
+                            <Input id="nomeFantasia" value={config.nomeFantasia} className="mt-1"
+                                onChange={e => set('nomeFantasia', e.target.value.toUpperCase())}
+                                placeholder="TRANSP. LTDA" />
+                        </div>
+
+                        <div>
+                            <Label htmlFor="rntrc">RNTRC</Label>
+                            <Input id="rntrc" value={config.rntrc} className="mt-1 font-mono"
+                                onChange={e => set('rntrc', unmask(e.target.value))}
+                                placeholder="00000000" />
+                        </div>
+
+                        <div className="col-span-2">
+                            <Label htmlFor="fone">Telefone</Label>
+                            <Input id="fone" value={maskPhone(config.fone)} className="mt-1"
+                                onChange={e => set('fone', unmask(e.target.value).slice(0, 11))}
+                                placeholder="(00) 00000-0000" />
+                        </div>
+
+                        <div className="col-span-2">
+                            <Label htmlFor="email">E-mail</Label>
+                            <Input id="email" type="email" value={config.email} className="mt-1"
+                                onChange={e => set('email', e.target.value)}
+                                placeholder="contato@empresa.com" />
+                        </div>
                     </div>
+                </div>
 
-                    <div>
-                        <Label htmlFor="nomeFantasia">Nome Fantasia</Label>
-                        <Input id="nomeFantasia" value={config.nomeFantasia} className="mt-1"
-                            onChange={e => set('nomeFantasia', e.target.value.toUpperCase())}
-                            placeholder="TRANSP. LTDA" />
-                    </div>
-
-                    <div>
-                        <Label htmlFor="ie">Inscrição Estadual</Label>
-                        <Input id="ie" value={config.ie} className="mt-1 font-mono"
-                            onChange={e => set('ie', unmask(e.target.value))}
-                            placeholder="000000000000" />
-                    </div>
-
-                    <div>
-                        <Label htmlFor="crt">CRT</Label>
-                        <Input id="crt" value={config.crt} className="mt-1" maxLength={1}
-                            onChange={e => set('crt', unmask(e.target.value))}
-                            placeholder="3" />
-                    </div>
-
-                    <div>
-                        <Label htmlFor="rntrc">RNTRC</Label>
-                        <Input id="rntrc" value={config.rntrc} className="mt-1 font-mono"
-                            onChange={e => set('rntrc', unmask(e.target.value))}
-                            placeholder="00000000" />
-                    </div>
-
-                    <div>
-                        <Label htmlFor="fone">Telefone</Label>
-                        <Input id="fone" value={maskPhone(config.fone)} className="mt-1"
-                            onChange={e => set('fone', unmask(e.target.value).slice(0, 11))}
-                            placeholder="(00) 00000-0000" />
-                    </div>
-
-                    <div>
-                        <Label htmlFor="email">E-mail</Label>
-                        <Input id="email" type="email" value={config.email} className="mt-1"
-                            onChange={e => set('email', e.target.value)}
-                            placeholder="contato@empresa.com" />
+                {/* Emissão CT-e — ocupa 1/3 */}
+                <div className="bg-white rounded-2xl border p-6 shadow-sm space-y-4">
+                    <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Emissão CT-e</h3>
+                    <div className="space-y-4">
+                        <div>
+                            <Label htmlFor="sequenciaCte">Próximo nº CT-e</Label>
+                            <Input id="sequenciaCte" type="number" min={1} className="mt-1 font-mono"
+                                value={config.sequenciaCte}
+                                onChange={e => set('sequenciaCte', Math.max(1, parseInt(e.target.value) || 1))} />
+                            <p className="text-[11px] text-slate-400 mt-1">Incrementado automaticamente</p>
+                        </div>
+                        <div>
+                            <Label htmlFor="serie">Série</Label>
+                            <Input id="serie" type="number" min={1} max={999} className="mt-1 font-mono"
+                                value={config.serie}
+                                onChange={e => set('serie', Math.max(1, parseInt(e.target.value) || 99))} />
+                            <p className="text-[11px] text-slate-400 mt-1">Padrão: 99</p>
+                        </div>
+                        <div>
+                            <Label htmlFor="cuf">Cód. UF</Label>
+                            <Input id="cuf" value={config.cuf} className="mt-1 font-mono"
+                                onChange={e => set('cuf', unmask(e.target.value))}
+                                placeholder="11" />
+                        </div>
+                        <div>
+                            <Label htmlFor="cMunEnv">Cód. Município IBGE</Label>
+                            <Input id="cMunEnv" value={config.cMunEnv} className="mt-1 font-mono"
+                                onChange={e => set('cMunEnv', unmask(e.target.value))}
+                                placeholder="1100452" maxLength={7} />
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Endereço */}
+            {/* Linha 2: Endereço — largura total */}
             <div className="bg-white rounded-2xl border p-6 shadow-sm space-y-4">
                 <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Endereço</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
 
-                    <div className="col-span-2">
+                    <div className="col-span-2 md:col-span-1">
                         <SearchInput
                             id="cep" label="CEP"
                             value={maskCEP(config.cep)}
@@ -325,11 +369,11 @@ export function ConfiguracoesEmpresa() {
                             loading={lookingUpCep}
                             placeholder="00000-000"
                             className="font-mono"
-                            hint="Clique na lupa para preencher o endereço"
+                            hint="Lupa preenche o endereço"
                         />
                     </div>
 
-                    <div className="col-span-2 md:col-span-2">
+                    <div className="col-span-2 md:col-span-3">
                         <Label htmlFor="xLgr">Logradouro</Label>
                         <Input id="xLgr" value={config.xLgr} className="mt-1"
                             onChange={e => set('xLgr', e.target.value.toUpperCase())}
@@ -343,7 +387,7 @@ export function ConfiguracoesEmpresa() {
                             placeholder="123" />
                     </div>
 
-                    <div className="col-span-2 md:col-span-3">
+                    <div>
                         <Label htmlFor="xCompl">Complemento</Label>
                         <Input id="xCompl" value={config.xCompl} className="mt-1"
                             onChange={e => set('xCompl', e.target.value.toUpperCase())}
@@ -376,45 +420,12 @@ export function ConfiguracoesEmpresa() {
                     </div>
 
                     <div>
-                        <Label htmlFor="cuf">Cód. UF</Label>
-                        <Input id="cuf" value={config.cuf} className="mt-1 font-mono"
-                            onChange={e => set('cuf', unmask(e.target.value))}
-                            placeholder="11" />
-                    </div>
-
-                    <div className="col-span-2">
-                        <Label htmlFor="cMunEnv">Cód. Município IBGE</Label>
-                        <Input id="cMunEnv" value={config.cMunEnv} className="mt-1 font-mono"
-                            onChange={e => set('cMunEnv', unmask(e.target.value))}
-                            placeholder="1100452" maxLength={7} />
+                        <Label className="text-slate-400 text-xs">UF → Cód.</Label>
+                        <Input value={config.cuf || (UF_CODES[config.ufEnv] ?? '')} readOnly
+                            className="mt-1 font-mono bg-slate-50 text-slate-500 cursor-default" />
                     </div>
                 </div>
             </div>
-
-            {/* Emissão */}
-            <div className="bg-white rounded-2xl border p-6 shadow-sm space-y-4">
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Emissão CT-e</h3>
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <Label htmlFor="sequenciaCte">Próximo nº CT-e</Label>
-                        <Input id="sequenciaCte" type="number" min={1} className="mt-1 font-mono"
-                            value={config.sequenciaCte}
-                            onChange={e => set('sequenciaCte', Math.max(1, parseInt(e.target.value) || 1))} />
-                        <p className="text-[11px] text-slate-400 mt-1">Incrementado automaticamente a cada emissão</p>
-                    </div>
-                    <div>
-                        <Label htmlFor="serie">Série</Label>
-                        <Input id="serie" type="number" min={1} max={999} className="mt-1 font-mono"
-                            value={config.serie}
-                            onChange={e => set('serie', Math.max(1, parseInt(e.target.value) || 99))} />
-                        <p className="text-[11px] text-slate-400 mt-1">Série do CT-e (padrão 99)</p>
-                    </div>
-                </div>
-            </div>
-
-            <Button onClick={handleSave} disabled={saving}>
-                {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Salvando...</> : 'Salvar configurações'}
-            </Button>
         </div>
     )
 }

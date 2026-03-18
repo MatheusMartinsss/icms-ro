@@ -38,19 +38,23 @@ export async function cancelarCte(id: string, justificativa: string) {
 }
 
 export async function imprimirCte(id: string) {
-    const response = await axios.get(
-        `/api/nuvem/cte/${id}/imprimir`,
-        {
-            responseType: 'blob',
-        }
-    )
+    const response = await axios.get(`/api/nuvem/cte/${id}/imprimir`, { responseType: 'blob' })
 
     const blob = new Blob([response.data], { type: 'application/pdf' })
     const url = window.URL.createObjectURL(blob)
 
-    window.open(url, '_blank')
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;border:0;opacity:0'
+    iframe.src = url
+    document.body.appendChild(iframe)
 
-    // opcional limpar memória
-    setTimeout(() => window.URL.revokeObjectURL(url), 1000)
+    iframe.onload = () => {
+        iframe.contentWindow?.focus()
+        iframe.contentWindow?.print()
+        setTimeout(() => {
+            document.body.removeChild(iframe)
+            window.URL.revokeObjectURL(url)
+        }, 60_000)
+    }
 }
 

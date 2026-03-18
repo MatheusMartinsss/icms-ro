@@ -1,6 +1,18 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { upsertParceiro } from '@/lib/upsert-parceiro'
 import { NextResponse } from 'next/server'
+
+function resolveTomador(infCte: any): string | null {
+    const toma = infCte?.ide?.toma3?.toma ?? infCte?.ide?.toma4?.toma
+    switch (Number(toma)) {
+        case 0: return infCte?.rem?.xNome ?? null
+        case 1: return infCte?.exped?.xNome ?? null
+        case 2: return infCte?.receb?.xNome ?? null
+        case 3: return infCte?.dest?.xNome ?? null
+        default: return null
+    }
+}
 
 async function getOwned(id: string, empresaId: string) {
     return prisma.cte.findFirst({ where: { id, empresaId } })
@@ -26,9 +38,18 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     const body = await req.json()
-    const { infCte, status, idNuvem, chave } = body
+    const { infCte, status, idNuvem, chave, erroMsg } = body
 
     const ide = infCte?.ide ?? (existing.infCte as any)?.ide ?? {}
+
+    const parceiroUpdates = infCte ? await (async () => {
+        const [remetenteId, destinatarioId] = await Promise.all([
+            upsertParceiro(existing.empresaId, infCte?.rem ?? {}),
+            upsertParceiro(existing.empresaId, infCte?.dest ?? {}),
+        ])
+        return { remetenteId, destinatarioId }
+    })() : {}
+
     const updated = await prisma.cte.update({
         where: { id: params.id },
         data: {
@@ -38,12 +59,15 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
                 serie: ide.serie ?? existing.serie,
                 nomeRemetente: infCte?.rem?.xNome ?? existing.nomeRemetente,
                 nomeDestinatario: infCte?.dest?.xNome ?? existing.nomeDestinatario,
+                nomeTomador: resolveTomador(infCte) ?? existing.nomeTomador,
                 valorTotal: infCte?.vPrest?.vTPrest ?? existing.valorTotal,
                 dhEmi: ide.dhEmi ? new Date(ide.dhEmi) : existing.dhEmi,
+                ...parceiroUpdates,
             } : {}),
             ...(status ? { status } : {}),
             ...(idNuvem !== undefined ? { idNuvem } : {}),
             ...(chave !== undefined ? { chave } : {}),
+            ...(erroMsg !== undefined ? { erroMsg } : {}),
         },
     })
 

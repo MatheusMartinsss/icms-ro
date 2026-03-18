@@ -35,9 +35,10 @@ model Empresa {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt      @map("updated_at")
 
-  users     User[]
-  ctes      Cte[]
-  parceiros Parceiro[]
+  users      User[]
+  ctes       Cte[]
+  parceiros  Parceiro[]
+  cteEventos CteEvento[]
 
   @@map("empresas")
 }
@@ -110,11 +111,13 @@ model Cte {
   serie            Int?
   nomeRemetente    String?   @map("nome_remetente")
   nomeDestinatario String?   @map("nome_destinatario")
+  nomeTomador      String?   @map("nome_tomador")
   valorTotal       Float?    @map("valor_total")
   dhEmi            DateTime? @map("dh_emi")
 
   idNuvem String? @map("id_nuvem")
   chave   String?
+  erroMsg String? @map("erro_msg")
 
   remetenteId    String?   @map("remetente_id")
   destinatarioId String?   @map("destinatario_id")
@@ -128,9 +131,34 @@ model Cte {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt      @map("updated_at")
 
+  eventos CteEvento[]
+
   @@index([empresaId, status])
   @@index([empresaId, createdAt])
   @@map("ctes")
+}
+
+model CteEvento {
+  id        String   @id @default(cuid())
+  empresaId String   @map("empresa_id")
+  empresa   Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  cteId   String? @map("cte_id")
+  cte     Cte?    @relation(fields: [cteId], references: [id], onDelete: SetNull)
+
+  /// 'emitido' | 'rejeitado' | 'erro' | 'cancelado'
+  tipo    String
+
+  chave   String?
+  idNuvem String? @map("id_nuvem")
+  erroMsg String? @map("erro_msg")
+  payload Json?   // resposta completa da Nuvem Fiscal
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([empresaId, createdAt])
+  @@index([cteId])
+  @@map("cte_eventos")
 }
 
 // ─── Auth.js v5 ───────────────────────────────────────────────────────────────

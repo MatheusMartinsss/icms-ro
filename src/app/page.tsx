@@ -146,9 +146,9 @@ export default function Home() {
       </header>
 
       <div className="max-w-6xl mx-auto px-6 py-6">
-        <Tabs defaultValue="calculadora">
+        <Tabs defaultValue="emitir-cte">
           <TabsList className="mb-6">
-            <TabsTrigger value="emitir-cte">Emitir CT-e</TabsTrigger>
+            <TabsTrigger value="emitir-cte">CT-e</TabsTrigger>
             <TabsTrigger value="calculadora">Calculadora de ICMS</TabsTrigger>
             <TabsTrigger value="configuracoes">Configurações da Empresa</TabsTrigger>
           </TabsList>
