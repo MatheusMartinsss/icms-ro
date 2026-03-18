@@ -6,42 +6,141 @@ datasource db {
   provider = "postgresql"
 }
 
-model User {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  passwordHash  String
-  name          String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  empresaConfig EmpresaConfig?
-  accounts      Account[]
-  sessions      Session[]
+// ─── Tenant ───────────────────────────────────────────────────────────────────
+
+model Empresa {
+  id           String   @id @default(cuid())
+  razaoSocial  String   @default("") @map("razao_social")
+  cnpj         String   @default("")
+  ie           String   @default("")
+  crt          String   @default("3")
+  rntrc        String   @default("")
+  cuf          String   @default("")
+  cMunEnv      String   @default("") @map("c_mun_env")
+  xMunEnv      String   @default("") @map("x_mun_env")
+  ufEnv        String   @default("") @map("uf_env")
+  sequenciaCte Int      @default(1)  @map("sequencia_cte")
+  serie        Int      @default(99)
+
+  // Endereço
+  nomeFantasia String   @default("") @map("nome_fantasia")
+  xLgr         String   @default("") @map("x_lgr")
+  nro          String   @default("")
+  xCompl       String   @default("") @map("x_compl")
+  xBairro      String   @default("") @map("x_bairro")
+  cep          String   @default("")
+  fone         String   @default("")
+  email        String   @default("")
+
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  users     User[]
+  ctes      Cte[]
+  parceiros Parceiro[]
+
+  @@map("empresas")
 }
 
-model EmpresaConfig {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  razaoSocial String   @default("")
-  cnpj        String   @default("")
-  ie          String   @default("")
-  crt         String   @default("3")
-  rntrc       String   @default("")
-  cuf         String   @default("")
-  cMunEnv     String   @default("")
-  xMunEnv     String   @default("")
-  ufEnv       String   @default("")
-  sequenciaCte Int     @default(1)
-  serie        Int     @default(99)
-  updatedAt   DateTime @updatedAt
+// ─── Users ────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String?
+  role         String   @default("member") // owner | admin | member
+  empresaId    String   @map("empresa_id")
+  empresa      Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  accounts Account[]
+  sessions Session[]
+
+  @@index([empresaId])
+  @@map("users")
 }
+
+// ─── Business data ────────────────────────────────────────────────────────────
+
+model Parceiro {
+  id        String  @id @default(cuid())
+  empresaId String  @map("empresa_id")
+  empresa   Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  tipoPessoa String @default("J") @map("tipo_pessoa")
+  xNome      String @map("x_nome")
+  cnpj       String?
+  cpf        String?
+  ie         String?
+  fone       String?
+  email      String?
+
+  xLgr    String? @map("x_lgr")
+  nro     String?
+  xCompl  String? @map("x_compl")
+  xBairro String? @map("x_bairro")
+  cMun    String? @map("c_mun")
+  xMun    String? @map("x_mun")
+  uf      String?
+  cep     String?
+  cPais   String? @default("1058")  @map("c_pais")
+  xPais   String? @default("BRASIL") @map("x_pais")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  ctesComoRemetente    Cte[] @relation("CteRemetente")
+  ctesComoDestinatario Cte[] @relation("CteDestinatario")
+  ctesComoTomador      Cte[] @relation("CteTomador")
+
+  @@index([empresaId, cnpj])
+  @@index([empresaId, xNome])
+  @@map("parceiros")
+}
+
+model Cte {
+  id        String  @id @default(cuid())
+  empresaId String  @map("empresa_id")
+  empresa   Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  status           String    @default("rascunho")
+  nCT              Int?      @map("n_ct")
+  serie            Int?
+  nomeRemetente    String?   @map("nome_remetente")
+  nomeDestinatario String?   @map("nome_destinatario")
+  valorTotal       Float?    @map("valor_total")
+  dhEmi            DateTime? @map("dh_emi")
+
+  idNuvem String? @map("id_nuvem")
+  chave   String?
+
+  remetenteId    String?   @map("remetente_id")
+  destinatarioId String?   @map("destinatario_id")
+  tomadorId      String?   @map("tomador_id")
+  remetente      Parceiro? @relation("CteRemetente",    fields: [remetenteId],    references: [id])
+  destinatario   Parceiro? @relation("CteDestinatario", fields: [destinatarioId], references: [id])
+  tomador        Parceiro? @relation("CteTomador",      fields: [tomadorId],      references: [id])
+
+  infCte Json @map("inf_cte")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@index([empresaId, status])
+  @@index([empresaId, createdAt])
+  @@map("ctes")
+}
+
+// ─── Auth.js v5 ───────────────────────────────────────────────────────────────
 
 model Account {
   id                String  @id @default(cuid())
-  userId            String
+  userId            String  @map("user_id")
   type              String
   provider          String
-  providerAccountId String
+  providerAccountId String  @map("provider_account_id")
   refresh_token     String? @db.Text
   access_token      String? @db.Text
   expires_at        Int?
@@ -52,14 +151,17 @@ model Account {
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@map("accounts")
 }
 
 model Session {
   id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
 }
 
 model VerificationToken {
@@ -68,4 +170,5 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+  @@map("verification_tokens")
 }

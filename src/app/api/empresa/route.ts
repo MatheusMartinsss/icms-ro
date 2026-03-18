@@ -4,26 +4,26 @@ import { NextResponse } from 'next/server'
 
 export async function GET() {
     const session = await auth()
-    if (!session?.user?.id) {
+    if (!session?.user?.empresaId)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    const config = await prisma.empresaConfig.findUnique({
-        where: { userId: (session.user as any).id },
+
+    const empresa = await prisma.empresa.findUnique({
+        where: { id: session.user.empresaId },
     })
-    return NextResponse.json(config ?? {})
+    return NextResponse.json(empresa ?? {})
 }
 
 export async function PUT(req: Request) {
     const session = await auth()
-    if (!session?.user?.id) {
+    if (!session?.user?.empresaId)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+
     const body = await req.json()
-    const { id, userId, updatedAt, ...data } = body
-    const config = await prisma.empresaConfig.upsert({
-        where: { userId: (session.user as any).id },
-        update: data,
-        create: { userId: (session.user as any).id, ...data },
+    const { id, createdAt, updatedAt, users, ctes, parceiros, ...data } = body
+
+    const empresa = await prisma.empresa.update({
+        where: { id: session.user.empresaId },
+        data,
     })
-    return NextResponse.json(config)
+    return NextResponse.json(empresa)
 }

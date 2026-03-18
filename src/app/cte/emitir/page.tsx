@@ -194,6 +194,36 @@ export default function EmitirCtePage() {
     const pICMS = Number(trib.pICMS) || 12
     const vICMS = Math.round(vBC * (pICMS / 100) * 100) / 100
 
+    const handleSalvarRascunho = async () => {
+        if (!nfe) return
+        setStatus('loading')
+        try {
+            const payload = new CtePartesBuilder(nfe)
+                .buildCompl({ xObs: obs })
+                .buildvPrest({ total: vBC, xNome: 'Valor do Frete' })
+                .buildImp({ vBC, pICMS, vICMS })
+                .buildInfCteNorm({
+                    infCarga: { proPred: carga.proPred, vCarga: Number(carga.vCarga) || undefined },
+                    infModal: { versaoModal: '4.00', rodo: { RNTRC: carga.rntrc } },
+                })
+                .buildEmitente({ CNPJ: empresa.cnpj || undefined, IE: empresa.ie || undefined })
+                .buildRemetente()
+                .buildDestinatario()
+                .build()
+
+            await fetch('/api/ctes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ infCte: payload.infCte, status: 'rascunho' }),
+            })
+            setStatus('idle')
+            toast.success('Rascunho salvo com sucesso')
+        } catch {
+            setStatus('error')
+            toast.error('Erro ao salvar rascunho')
+        }
+    }
+
     const handleEmitir = async () => {
         if (!nfe) return
         setStatus('loading')
@@ -259,6 +289,18 @@ export default function EmitirCtePage() {
 
             const result = await emitirCte(payload)
 
+            // Salva no banco independente do resultado
+            await fetch('/api/ctes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    infCte: payload.infCte,
+                    status: result?.status ?? 'desconhecido',
+                    idNuvem: result?.id ?? null,
+                    chave: result?.chave ?? null,
+                }),
+            })
+
             if (result?.status === 'autorizado') {
                 setStatus('success')
                 // Incrementa sequência no banco
@@ -280,7 +322,6 @@ export default function EmitirCtePage() {
                     duration: 12000,
                 })
             } else {
-                // criado mas ainda sem resposta da SEFAZ (ex: pendente)
                 setStatus('success')
                 toast.info(`CT-e criado — status: ${result?.status ?? 'desconhecido'}`, {
                     description: `ID: ${result?.id ?? '—'}`,
@@ -671,6 +712,9 @@ export default function EmitirCtePage() {
                             <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
                         )}
                         {status === 'loading' ? 'Emitindo...' : 'Emitir CT-e'}
+                    </Button>
+                    <Button variant="outline" onClick={handleSalvarRascunho} disabled={!nfe || status === 'loading'}>
+                        Salvar rascunho
                     </Button>
                     <Link href="/"><Button variant="ghost">Cancelar</Button></Link>
                 </div>

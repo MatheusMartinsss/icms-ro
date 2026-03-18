@@ -1,6 +1,7 @@
 "use client"
 
 import React, { ChangeEvent, useState } from "react";
+import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -131,6 +132,16 @@ export default function Home() {
             F
           </div>
           <span className="font-semibold text-slate-800">FreteCalc</span>
+          <div className="ml-auto">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              className="text-slate-500 hover:text-slate-800"
+            >
+              Sair
+            </Button>
+          </div>
         </div>
       </header>
 
