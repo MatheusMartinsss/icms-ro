@@ -40,7 +40,9 @@ model Empresa {
   users      User[]
   ctes       Cte[]
   mdfes      Mdfe[]
-  parceiros  Parceiro[]
+  veiculos       Veiculo[]
+  parceiros      Parceiro[]
+  proprietarios  Proprietario[]
   cteEventos CteEvento[]
 
   @@map("empresas")
@@ -162,6 +164,60 @@ model CteEvento {
   @@index([empresaId, createdAt])
   @@index([cteId])
   @@map("cte_eventos")
+}
+
+// ─── Proprietários de Veículo ─────────────────────────────────────────────────
+
+model Proprietario {
+  id        String  @id @default(cuid())
+  empresaId String  @map("empresa_id")
+  empresa   Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  xNome  String  @map("x_nome")
+  cpf    String?
+  cnpj   String?
+  rntrc  String
+  ie     String?
+  uf     String?
+  tpProp Int     @default(0) @map("tp_prop")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  veiculos Veiculo[]
+
+  @@index([empresaId, xNome])
+  @@index([empresaId, cpf])
+  @@index([empresaId, cnpj])
+  @@map("proprietarios")
+}
+
+// ─── Veículos ─────────────────────────────────────────────────────────────────
+
+model Veiculo {
+  id        String  @id @default(cuid())
+  empresaId String  @map("empresa_id")
+  empresa   Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  placa   String
+  renavam String?
+  tara    Int     @default(0)
+  capKG   Int?    @map("cap_kg")
+  capM3   Int?    @map("cap_m3")
+  tpRod   String  @default("01") @map("tp_rod")
+  tpCar   String  @default("00") @map("tp_car")
+  uf      String?
+  rntrc   String?
+
+  proprietarioId String?       @map("proprietario_id")
+  proprietario   Proprietario? @relation(fields: [proprietarioId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@unique([empresaId, placa])
+  @@index([empresaId, placa])
+  @@map("veiculos")
 }
 
 // ─── MDF-e ────────────────────────────────────────────────────────────────────

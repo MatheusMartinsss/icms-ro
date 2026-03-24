@@ -7,19 +7,33 @@ import { useForm, Controller, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { CurrencyInput } from '@/components/ui/currency-input'
+import { Search, PenLine } from 'lucide-react'
 import { useEmpresaConfig } from '@/components/configuracoes-empresa'
 import { MdfeBuilder, type CteSelecionado } from '@/lib/mdfe/builder'
 import { emitirMdfe, imprimirMdfe } from '@/services/mdfe'
+import { Navbar } from '@/components/navbar'
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
 const munItem  = z.object({ cMun: z.string().min(1, 'Selecione um município'), xMun: z.string().min(1, 'Nome obrigatório') })
 const ufItem   = z.object({ uf: z.string().min(2) })
+
+const propItem = z.object({
+    cpfCnpj: z.enum(['cpf', 'cnpj']),
+    cpf:     z.string().optional(),
+    cnpj:    z.string().optional(),
+    rntrc:   z.string().min(1, 'Obrigatório'),
+    xNome:   z.string().min(2, 'Obrigatório'),
+    ie:      z.string().optional(),
+    uf:      z.string().optional(),
+    tpProp:  z.string().min(1, 'Obrigatório'),
+})
 
 const schema = z.object({
     // Cabeçalho
@@ -33,14 +47,30 @@ const schema = z.object({
     munCarrega:  z.array(munItem).min(1, 'Pelo menos uma cidade de carregamento'),
     percurso:    z.array(ufItem),
     munDescarga: z.array(munItem),
-    // Veículo
+    // Veículo de tração
     rntrc:    z.string().regex(/^([0-9]{8}|ISENTO)$/, '8 dígitos ou ISENTO'),
     placa:    z.string().min(7, 'Placa inválida'),
+    renavam:  z.string().optional(),
+    tara:     z.string().min(1, 'Obrigatório'),
+    capKG:    z.string().optional(),
+    capM3:    z.string().optional(),
     tpRod:    z.string().min(1, 'Obrigatório'),
     tpCar:    z.string().min(1, 'Obrigatório'),
     ufVeic:   z.string().min(2, 'Obrigatório'),
+    prop:     propItem.optional(),
     condNome: z.string().min(2, 'Obrigatório'),
     condCpf:  z.string().min(11, 'CPF inválido'),
+    // Reboques (máx 3)
+    veicReboque: z.array(z.object({
+        placa:   z.string().min(7, 'Placa inválida'),
+        renavam: z.string().optional(),
+        tara:    z.string().min(1, 'Obrigatório'),
+        capKG:   z.string().optional(),
+        capM3:   z.string().optional(),
+        tpCar:   z.string().min(1, 'Obrigatório'),
+        ufVeic:  z.string().optional(),
+        prop:    propItem.optional(),
+    })).max(3),
     // Totais
     vCarga: z.string().refine(v => Number(v) > 0, 'Obrigatório'),
     qCarga: z.string().min(1, 'Obrigatório'),
@@ -85,6 +115,16 @@ const TP_EMIT = [
     { value: '3', label: 'Prestador de serviço de transporte (CT-e Globalizado)' },
 ]
 
+const TP_PROP = [
+    { value: '0', label: 'TAC Agregado' },
+    { value: '1', label: 'TAC Independente' },
+    { value: '2', label: 'Outros' },
+]
+
+function defaultProp() {
+    return { cpfCnpj: 'cpf' as const, cpf: '', cnpj: '', rntrc: '', xNome: '', ie: '', uf: '', tpProp: '0' }
+}
+
 function todayStr() { return new Date().toISOString().slice(0, 10) }
 
 function defaultValues(): FormValues {
@@ -92,11 +132,13 @@ function defaultValues(): FormValues {
         modal: '1', tpEmit: '1',
         ufIni: 'RO', ufFim: 'RO',
         dtViagem: todayStr(), hrSaida: '',
-        munCarrega:  [{ cMun: '', xMun: '' }],
+        munCarrega:  [],
         percurso:    [],
         munDescarga: [],
-        rntrc: '', placa: '', tpRod: '01', tpCar: '00', ufVeic: 'RO',
+        rntrc: '', placa: '', renavam: '', tara: '', capKG: '', capM3: '',
+        tpRod: '01', tpCar: '00', ufVeic: 'RO', prop: undefined,
         condNome: '', condCpf: '',
+        veicReboque: [],
         vCarga: '', qCarga: '', cUnid: '01',
         infCpl: '',
     }
@@ -108,6 +150,14 @@ function maskCpf(v: string) {
     if (d.length <= 6) return `${d.slice(0,3)}.${d.slice(3)}`
     if (d.length <= 9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`
     return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`
+}
+function maskCnpj(v: string) {
+    const d = v.replace(/\D/g, '').slice(0, 14)
+    if (d.length <= 2) return d
+    if (d.length <= 5) return `${d.slice(0,2)}.${d.slice(2)}`
+    if (d.length <= 8) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5)}`
+    if (d.length <= 12) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8)}`
+    return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`
 }
 function maskPlaca(v: string) { return v.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 7) }
 function maskRntrc(v: string) {
@@ -358,6 +408,460 @@ function MunCol({
     )
 }
 
+// ─── MotoristaSearch ──────────────────────────────────────────────────────────
+
+interface Motorista { id: string; xNome: string; cpf: string | null }
+
+function MotoristaSearch({ onSelect }: { onSelect: (m: Motorista) => void }) {
+    const [query, setQuery]       = useState('')
+    const [results, setResults]   = useState<Motorista[]>([])
+    const [open, setOpen]         = useState(false)
+    const [loading, setLoading]   = useState(false)
+    const timerRef                = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const justPicked              = useRef(false)
+
+    useEffect(() => {
+        if (justPicked.current) return
+        if (!query.trim()) { setResults([]); return }
+        if (timerRef.current) clearTimeout(timerRef.current)
+        timerRef.current = setTimeout(async () => {
+            setLoading(true)
+            try {
+                const res  = await fetch(`/api/parceiros?q=${encodeURIComponent(query)}`)
+                const data = await res.json()
+                setResults((data as Motorista[]).filter(p => p.cpf))
+            } finally { setLoading(false) }
+        }, 300)
+    }, [query])
+
+    function handleSelect(m: Motorista) {
+        justPicked.current = true
+        onSelect(m)
+        setQuery('')
+        setResults([])
+        setOpen(false)
+    }
+
+    return (
+        <div className="relative">
+            <Input
+                value={query}
+                onChange={e => { justPicked.current = false; setQuery(e.target.value); setOpen(true) }}
+                onFocus={() => { if (!justPicked.current) setOpen(true) }}
+                onBlur={() => setTimeout(() => setOpen(false), 150)}
+                placeholder="Buscar motorista por nome ou CPF..."
+                className="h-8 text-sm"
+            />
+            {open && (results.length > 0 || loading) && (
+                <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                    {loading && <p className="px-3 py-2 text-xs text-slate-400">Buscando...</p>}
+                    {!loading && results.map(m => (
+                        <button key={m.id} type="button" onMouseDown={() => handleSelect(m)}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center justify-between gap-2">
+                            <span className="font-medium">{m.xNome}</span>
+                            <span className="text-xs text-slate-400 font-mono shrink-0">
+                                {m.cpf ? m.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : '—'}
+                            </span>
+                        </button>
+                    ))}
+                    {!loading && results.length === 0 && query.trim() && (
+                        <p className="px-3 py-2 text-xs text-slate-400">Nenhum motorista encontrado.</p>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
+
+// ─── VeiculoRecord + PlacaInput ───────────────────────────────────────────────
+
+interface VeiculoRecord {
+    id: string; placa: string; tpRod: string; tpCar: string
+    tara: number; capKG: number | null; capM3: number | null
+    uf: string | null; renavam: string | null; rntrc: string | null
+    proprietarioId: string | null
+    proprietario: ProprietarioRecord | null
+}
+
+function PlacaInput({ value, onChange, onSelect, error }: {
+    value: string
+    onChange: (v: string) => void
+    onSelect: (v: VeiculoRecord) => void
+    error?: string
+}) {
+    const [results, setResults] = useState<VeiculoRecord[]>([])
+    const [open, setOpen]       = useState(false)
+    const [loading, setLoading] = useState(false)
+    const timerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const justPicked  = useRef(false)   // true após selecionar — impede reabrir o dropdown
+
+    useEffect(() => {
+        if (justPicked.current) return
+        const q = value.replace(/[^A-Z0-9]/gi, '')
+        if (q.length < 2) { setResults([]); setOpen(false); return }
+        if (timerRef.current) clearTimeout(timerRef.current)
+        timerRef.current = setTimeout(async () => {
+            setLoading(true)
+            try {
+                const res  = await fetch(`/api/veiculos?q=${encodeURIComponent(q)}`)
+                const data = await res.json()
+                setResults(Array.isArray(data) ? data : [])
+                setOpen(true)
+            } finally { setLoading(false) }
+        }, 300)
+    }, [value])
+
+    return (
+        <div className="relative">
+            <Label className="text-xs text-slate-600">Placa *</Label>
+            <div className="relative mt-1">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                <Input
+                    value={value}
+                    onChange={e => {
+                        justPicked.current = false
+                        onChange(maskPlaca(e.target.value))
+                    }}
+                    onBlur={() => setTimeout(() => setOpen(false), 150)}
+                    onFocus={() => { if (!justPicked.current && results.length > 0) setOpen(true) }}
+                    placeholder="ABC1D23"
+                    className={`pl-8 h-8 font-mono text-sm uppercase ${error ? 'border-red-500' : ''}`}
+                />
+            </div>
+            {error && <p className="text-xs text-red-500 mt-0.5">{error}</p>}
+            {open && (results.length > 0 || loading) && (
+                <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                    {loading && <p className="px-3 py-2 text-xs text-slate-400">Buscando...</p>}
+                    {!loading && results.map(v => (
+                        <button key={v.id} type="button" onMouseDown={() => {
+                            justPicked.current = true
+                            onSelect(v)
+                            setOpen(false)
+                        }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center justify-between gap-2">
+                            <span className="font-mono font-semibold">{v.placa}</span>
+                            <span className="text-xs text-slate-400">
+                                {TP_ROD.find(r => r.value === v.tpRod)?.label ?? v.tpRod} · {v.tara} kg
+                                {v.proprietario ? ` · ${v.proprietario.xNome}` : ''}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    )
+}
+
+// ─── VeiculoDetalheModal ──────────────────────────────────────────────────────
+
+const TP_OWNER = [
+    { value: 'proprio',   label: 'Próprio' },
+    { value: 'terceiro',  label: 'Terceiro' },
+]
+
+function VeiculoDetalheModal({ open, onClose, isTracao, fieldPrefix, control, errors: _errors, setValue, getValues, watch, showProp, setShowProp, propId, onPropId }: {
+    open: boolean
+    onClose: () => void
+    isTracao: boolean
+    fieldPrefix: string
+    control: any; errors: any; setValue: any; getValues: any; watch: any
+    showProp: boolean
+    setShowProp: (v: boolean) => void
+    propId: string | null
+    onPropId: (id: string | null) => void
+}) {
+    const f          = (name: string) => (fieldPrefix ? `${fieldPrefix}.${name}` : name) as any
+    const propPrefix = (fieldPrefix ? `${fieldPrefix}.prop` : 'prop') as any
+
+    const [tpOwner,  setTpOwner]  = useState<string>('proprio')
+    const [propMode, setPropMode] = useState<'buscar' | 'cadastrar'>('buscar')
+    const [propForm, setPropForm] = useState(defaultProp)
+
+    useEffect(() => {
+        if (!open) return
+        const owned = showProp ? 'terceiro' : 'proprio'
+        setTpOwner(owned)
+        if (owned === 'terceiro') {
+            const existing = getValues(propPrefix)
+            if (existing?.xNome) {
+                setPropForm({ cpfCnpj: existing.cpfCnpj ?? 'cpf', cpf: existing.cpf ?? '', cnpj: existing.cnpj ?? '', rntrc: existing.rntrc ?? '', xNome: existing.xNome ?? '', ie: existing.ie ?? '', uf: existing.uf ?? '', tpProp: existing.tpProp ?? '0' })
+                setPropMode('cadastrar')
+            } else {
+                setPropForm(defaultProp()); setPropMode('buscar')
+            }
+        } else {
+            setPropForm(defaultProp()); setPropMode('buscar')
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open])
+
+    function setProp(patch: Partial<ReturnType<typeof defaultProp>>) {
+        setPropForm(prev => ({ ...prev, ...patch }))
+    }
+
+    function handleOwnerChange(val: string) {
+        setTpOwner(val)
+        if (val === 'proprio') {
+            setShowProp(false); setValue(propPrefix, undefined); onPropId(null); setPropForm(defaultProp())
+        } else {
+            setShowProp(true)
+        }
+    }
+
+    async function handleSaveAll() {
+        const vals = getValues()
+
+        // 1. Salva/atualiza proprietário (se terceiro)
+        let resolvedPropId = propId
+        if (tpOwner === 'terceiro') {
+            if (!propForm.xNome || !propForm.rntrc) {
+                toast.error('Preencha Nome e RNTRC do proprietário.')
+                return
+            }
+            try {
+                const res  = await fetch('/api/proprietarios', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        xNome:  propForm.xNome,   rntrc:  propForm.rntrc,
+                        tpProp: Number(propForm.tpProp ?? '0'),
+                        cpf:    propForm.cpfCnpj === 'cpf'  ? (propForm.cpf  || null) : null,
+                        cnpj:   propForm.cpfCnpj === 'cnpj' ? (propForm.cnpj || null) : null,
+                        ie:     propForm.ie  || null,
+                        uf:     propForm.uf  || null,
+                    }),
+                })
+                const saved = await res.json()
+                resolvedPropId = saved.id ?? null
+                onPropId(resolvedPropId)
+                // Sync para o form principal (XML builder)
+                setValue(propPrefix, { ...propForm })
+            } catch { toast.error('Erro ao salvar proprietário.'); return }
+        }
+
+        // 2. Salva veículo vinculado ao proprietário
+        const base = isTracao ? {
+            placa:   vals.placa,       renavam: vals.renavam || null,
+            tara:    Number(vals.tara) || 0,
+            capKG:   vals.capKG        ? Number(vals.capKG) : null,
+            capM3:   vals.capM3        ? Number(vals.capM3) : null,
+            tpRod:   vals.tpRod,       tpCar:   vals.tpCar,
+            uf:      vals.ufVeic,      proprietarioId: resolvedPropId,
+        } : (() => {
+            const idx = Number(fieldPrefix.split('.')[1])
+            const r   = vals.veicReboque[idx]
+            return {
+                placa:   r.placa,       renavam: r.renavam || null,
+                tara:    Number(r.tara) || 0,
+                capKG:   r.capKG        ? Number(r.capKG) : null,
+                capM3:   r.capM3        ? Number(r.capM3) : null,
+                tpCar:   r.tpCar,       uf:      r.ufVeic || null,
+                proprietarioId: resolvedPropId,
+            }
+        })()
+        try {
+            await fetch('/api/veiculos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(base) })
+            toast.success('Veículo salvo no cadastro.')
+            onClose()
+        } catch { toast.error('Erro ao salvar veículo.') }
+    }
+
+    return (
+        <Dialog open={open} onOpenChange={onClose}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle>{isTracao ? 'Veículo de Tração' : 'Reboque'} — Cadastro</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-1">
+
+                    {/* Linha 0 — placa + tara */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <Controller name={f('placa')} control={control} render={({ field, fieldState }) => (
+                            <Field label="Placa *" error={fieldState.error?.message}
+                                value={field.value ?? ''} onChange={v => field.onChange(maskPlaca(v))}
+                                placeholder="ABC1D23" mono />
+                        )} />
+                        <Controller name={f('tara')} control={control} render={({ field, fieldState }) => (
+                            <Field label="Tara (KG) *" error={fieldState.error?.message}
+                                value={field.value ?? ''} onChange={v => field.onChange(v.replace(/\D/g, ''))} placeholder="0" mono />
+                        )} />
+                    </div>
+
+                    {/* Linha 1 — identificação */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <Controller name={f('renavam')} control={control} render={({ field }) => (
+                            <Field label="RENAVAM" value={field.value ?? ''} onChange={v => field.onChange(v.replace(/\D/g, '').slice(0, 11))} placeholder="00000000000" mono />
+                        )} />
+                        <Controller name={f('ufVeic')} control={control} render={({ field, fieldState }) => (
+                            <UfSelect label="UF Licenciamento" value={field.value ?? ''} onChange={field.onChange} error={fieldState.error?.message} />
+                        )} />
+                        <Controller name={f('capKG')} control={control} render={({ field }) => (
+                            <Field label="Cap. KG" value={field.value ?? ''} onChange={v => field.onChange(v.replace(/\D/g, ''))} placeholder="0" mono />
+                        )} />
+                        <Controller name={f('capM3')} control={control} render={({ field }) => (
+                            <Field label="Cap. M³" value={field.value ?? ''} onChange={v => field.onChange(v.replace(/\D/g, ''))} placeholder="0" mono />
+                        )} />
+                    </div>
+
+                    {/* Linha 2 — tipo + proprietário */}
+                    <div className={`grid gap-4 ${isTracao ? 'grid-cols-2 md:grid-cols-3' : 'grid-cols-2'}`}>
+                        {isTracao && (
+                            <Controller name={f('tpRod')} control={control} render={({ field, fieldState }) => (
+                                <SelectField label="Tipo de Rodado" value={field.value} onChange={field.onChange} options={TP_ROD} error={fieldState.error?.message} />
+                            )} />
+                        )}
+                        <Controller name={f('tpCar')} control={control} render={({ field, fieldState }) => (
+                            <SelectField label="Tipo de Carroceria" value={field.value} onChange={field.onChange} options={TP_CAR} error={fieldState.error?.message} />
+                        )} />
+                        <div>
+                            <Label className="text-xs text-slate-600">Tipo de Proprietário</Label>
+                            <select value={tpOwner} onChange={e => handleOwnerChange(e.target.value)}
+                                className="mt-1 h-8 w-full rounded-lg border border-slate-200 px-2 text-sm bg-white">
+                                {TP_OWNER.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Proprietário (quando terceiro) — estado local, separado do form principal */}
+                    {tpOwner !== 'proprio' && (
+                        <div className="border rounded-xl p-4 space-y-4">
+                            {/* Toggle buscar / cadastrar */}
+                            <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+                                {(['buscar', 'cadastrar'] as const).map(mode => (
+                                    <button key={mode} type="button"
+                                        onClick={() => { setPropMode(mode); if (mode === 'cadastrar' && propMode === 'buscar') { setPropForm(defaultProp()); onPropId(null) } }}
+                                        className={`px-3 py-1 text-xs font-medium rounded-md transition-colors capitalize ${propMode === mode ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
+                                        {mode === 'buscar' ? 'Buscar cadastro' : 'Novo proprietário'}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {propMode === 'buscar' ? (
+                                /* ── Modo busca ── */
+                                <ProprietarioInput
+                                    value={propForm.xNome}
+                                    onChange={v => setProp({ xNome: v })}
+                                    onSelect={p => {
+                                        onPropId(p.id)
+                                        setPropForm({ cpfCnpj: p.cpf ? 'cpf' : 'cnpj', cpf: p.cpf ?? '', cnpj: p.cnpj ?? '', rntrc: p.rntrc, xNome: p.xNome, ie: p.ie ?? '', uf: p.uf ?? '', tpProp: String(p.tpProp) })
+                                        setPropMode('cadastrar')
+                                    }}
+                                />
+                            ) : (
+                                /* ── Modo cadastro ── */
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <Field label="Nome / Razão Social *" value={propForm.xNome} onChange={v => setProp({ xNome: v })} placeholder="Nome do proprietário" />
+                                        <SelectField label="Tipo de Proprietário" value={propForm.tpProp} onChange={v => setProp({ tpProp: v })} options={TP_PROP} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex gap-4">
+                                            {(['cpf', 'cnpj'] as const).map(t => (
+                                                <label key={t} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                                    <input type="radio" value={t} checked={propForm.cpfCnpj === t} onChange={() => setProp({ cpfCnpj: t })} className="accent-sky-600" />
+                                                    {t.toUpperCase()}
+                                                </label>
+                                            ))}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {propForm.cpfCnpj === 'cpf'
+                                                ? <Field label="CPF" value={maskCpf(propForm.cpf)} onChange={v => setProp({ cpf: v.replace(/\D/g, '').slice(0, 11) })} placeholder="000.000.000-00" mono />
+                                                : <Field label="CNPJ" value={maskCnpj(propForm.cnpj)} onChange={v => setProp({ cnpj: v.replace(/\D/g, '').slice(0, 14) })} placeholder="00.000.000/0001-00" mono />
+                                            }
+                                            <Field label="RNTRC *" value={maskRntrc(propForm.rntrc)} onChange={v => setProp({ rntrc: maskRntrc(v) })} placeholder="00000000" mono />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <Field label="IE" value={propForm.ie} onChange={v => setProp({ ie: v })} placeholder="Inscrição Estadual" mono />
+                                        <UfSelect label="UF" value={propForm.uf} onChange={v => setProp({ uf: v })} />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="flex justify-end gap-3 pt-2 border-t">
+                        <button type="button" onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">Fechar</button>
+                        <button type="button" onClick={handleSaveAll}
+                            className="text-sm font-semibold bg-sky-600 hover:bg-sky-700 text-white px-4 py-1.5 rounded-lg transition-colors">
+                            Salvar
+                        </button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    )
+}
+
+// ─── ProprietarioRecord + ProprietarioInput ───────────────────────────────────
+
+interface ProprietarioRecord {
+    id: string; xNome: string; cpf: string | null; cnpj: string | null
+    rntrc: string; ie: string | null; uf: string | null; tpProp: number
+}
+
+function ProprietarioInput({ value, onChange, onSelect, error }: {
+    value: string
+    onChange: (v: string) => void
+    onSelect: (p: ProprietarioRecord) => void
+    error?: string
+}) {
+    const [results, setResults] = useState<ProprietarioRecord[]>([])
+    const [open, setOpen]       = useState(false)
+    const [loading, setLoading] = useState(false)
+    const timerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const justPicked = useRef(false)
+
+    useEffect(() => {
+        if (justPicked.current) return
+        if (!value.trim() || value.length < 2) { setResults([]); setOpen(false); return }
+        if (timerRef.current) clearTimeout(timerRef.current)
+        timerRef.current = setTimeout(async () => {
+            setLoading(true)
+            try {
+                const res  = await fetch(`/api/proprietarios?q=${encodeURIComponent(value)}`)
+                const data = await res.json()
+                setResults(Array.isArray(data) ? data : [])
+                setOpen(true)
+            } finally { setLoading(false) }
+        }, 300)
+    }, [value])
+
+    return (
+        <div className="relative">
+            <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                <Input
+                    value={value}
+                    onChange={e => {
+                        justPicked.current = false
+                        onChange(e.target.value)
+                    }}
+                    onBlur={() => setTimeout(() => setOpen(false), 150)}
+                    onFocus={() => { if (!justPicked.current && results.length > 0) setOpen(true) }}
+                    placeholder="Buscar por nome, CPF ou CNPJ..."
+                    className={`pl-8 h-8 text-sm ${error ? 'border-red-500' : ''}`}
+                />
+            </div>
+            {error && <p className="text-xs text-red-500 mt-0.5">{error}</p>}
+            {open && (results.length > 0 || loading) && (
+                <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                    {loading && <p className="px-3 py-2 text-xs text-slate-400">Buscando...</p>}
+                    {!loading && results.map(p => (
+                        <button key={p.id} type="button" onMouseDown={() => { justPicked.current = true; onSelect(p); setOpen(false) }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center justify-between gap-2">
+                            <span className="font-medium truncate">{p.xNome}</span>
+                            <span className="text-xs text-slate-400 font-mono shrink-0">
+                                {p.cpf ? p.cpf : p.cnpj ?? '—'} · RNTRC: {p.rntrc}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    )
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function EmitirMdfePage() {
@@ -370,8 +874,15 @@ export default function EmitirMdfePage() {
     const [errMsg, setErrMsg]                 = useState('')
     const [emittedIdNuvem, setEmittedIdNuvem] = useState<string | null>(null)
     const [ctesSelecionados, setCtesSelecionados] = useState<CteSelecionado[]>([])
+    const [cteDataMap, setCteDataMap]             = useState<Record<string, { cMunCarrega: string; xMunCarrega: string; cMunDescarga: string; xMunDescarga: string; peso: number; valor: number }>>({})
     const [ctesDisponiveis, setCtesDisponiveis]   = useState<any[]>([])
     const [buscaCte, setBuscaCte]             = useState('')
+    const [showPropTracao, setShowPropTracao]       = useState(false)
+    const [showPropReboques, setShowPropReboques]   = useState<boolean[]>([])
+    const [propIdTracao, setPropIdTracao]           = useState<string | null>(null)
+    const [propIdReboques, setPropIdReboques]       = useState<(string | null)[]>([])
+    const [modalTracao, setModalTracao]             = useState(false)
+    const [modalReboqueIdx, setModalReboqueIdx]     = useState<number | null>(null)
 
     const { control, handleSubmit, setValue, getValues, reset, watch,
         formState: { errors } } = useForm<FormValues>({
@@ -379,9 +890,10 @@ export default function EmitirMdfePage() {
         defaultValues: defaultValues(),
     })
 
-    const { fields: munCarregaFields,  append: addMunCarrega,  remove: removeMunCarrega  } = useFieldArray({ control, name: 'munCarrega' })
-    const { fields: percursoFields,    append: addPercurso,    remove: removePercurso    } = useFieldArray({ control, name: 'percurso' })
-    const { fields: munDescargaFields, append: addMunDescarga, remove: removeMunDescarga } = useFieldArray({ control, name: 'munDescarga' })
+    const { fields: munCarregaFields,   append: addMunCarrega,   remove: removeMunCarrega   } = useFieldArray({ control, name: 'munCarrega' })
+    const { fields: percursoFields,     append: addPercurso,     remove: removePercurso     } = useFieldArray({ control, name: 'percurso' })
+    const { fields: munDescargaFields,  append: addMunDescarga,  remove: removeMunDescarga  } = useFieldArray({ control, name: 'munDescarga' })
+    const { fields: reboqueFields,      append: addReboque,      remove: removeReboque      } = useFieldArray({ control, name: 'veicReboque' })
 
     const ufIni = watch('ufIni')
     const ufFim = watch('ufFim')
@@ -391,9 +903,6 @@ export default function EmitirMdfePage() {
         if (empresa.rntrc)   setValue('rntrc', empresa.rntrc)
         if (empresa.ufEnv)   setValue('ufIni', empresa.ufEnv)
         if (empresa.sequenciaMdfe) setNMDFe(empresa.sequenciaMdfe)
-        if (empresa.xMunEnv) {
-            setValue('munCarrega', [{ cMun: empresa.cMunEnv ?? '', xMun: empresa.xMunEnv }])
-        }
     }, [empresa.rntrc, empresa.ufEnv, empresa.sequenciaMdfe, empresa.cMunEnv, empresa.xMunEnv])
 
     // Carrega rascunho via ?id=
@@ -424,11 +933,44 @@ export default function EmitirMdfePage() {
                     munDescarga: (inf._munDescarga ?? []).map((m: any) => ({ cMun: m.cMun ?? '', xMun: m.xMun ?? '' })),
                     rntrc:    rodo.infANTT?.RNTRC ?? '',
                     placa:    veic.placa ?? '',
+                    renavam:  veic.RENAVAM ?? '',
+                    tara:     String(veic.tara ?? ''),
+                    capKG:    String(veic.capKG ?? ''),
+                    capM3:    String(veic.capM3 ?? ''),
                     tpRod:    veic.tpRod ?? '01',
                     tpCar:    veic.tpCar ?? '00',
                     ufVeic:   veic.UF ?? 'RO',
+                    prop: veic.prop ? {
+                        cpfCnpj: veic.prop.CPF ? 'cpf' as const : 'cnpj' as const,
+                        cpf:    veic.prop.CPF  ?? '',
+                        cnpj:   veic.prop.CNPJ ?? '',
+                        rntrc:  veic.prop.RNTRC ?? '',
+                        xNome:  veic.prop.xNome ?? '',
+                        ie:     veic.prop.IE ?? '',
+                        uf:     veic.prop.UF ?? '',
+                        tpProp: String(veic.prop.tpProp ?? '0'),
+                    } : undefined,
                     condNome: cond.xNome ?? '',
                     condCpf:  cond.CPF ?? '',
+                    veicReboque: (rodo.veicReboque ?? []).map((r: any) => ({
+                        placa:   r.placa ?? '',
+                        renavam: r.RENAVAM ?? '',
+                        tara:    String(r.tara ?? ''),
+                        capKG:   String(r.capKG ?? ''),
+                        capM3:   String(r.capM3 ?? ''),
+                        tpCar:   r.tpCar ?? '00',
+                        ufVeic:  r.UF ?? '',
+                        prop:    r.prop ? {
+                            cpfCnpj: r.prop.CPF ? 'cpf' as const : 'cnpj' as const,
+                            cpf:    r.prop.CPF  ?? '',
+                            cnpj:   r.prop.CNPJ ?? '',
+                            rntrc:  r.prop.RNTRC ?? '',
+                            xNome:  r.prop.xNome ?? '',
+                            ie:     r.prop.IE ?? '',
+                            uf:     r.prop.UF ?? '',
+                            tpProp: String(r.prop.tpProp ?? '0'),
+                        } : undefined,
+                    })),
                     vCarga:   String(tot.vCarga ?? ''),
                     qCarga:   String(tot.qCarga ?? ''),
                     cUnid:    tot.cUnid ?? '01',
@@ -441,6 +983,8 @@ export default function EmitirMdfePage() {
                     }
                 }
                 setCtesSelecionados(cteList)
+                setShowPropTracao(!!veic.prop)
+                setShowPropReboques((rodo.veicReboque ?? []).map((r: any) => !!r.prop))
             })
             .catch(() => toast.error('Não foi possível carregar o rascunho'))
     }, [])
@@ -490,7 +1034,42 @@ export default function EmitirMdfePage() {
                 dhIniViagem,
             })
             .buildEmit()
-            .buildRodo({ placa: vals.placa, tpRod: vals.tpRod, tpCar: vals.tpCar, uf: vals.ufVeic })
+            .buildRodo({
+                placa:   vals.placa,
+                tpRod:   vals.tpRod,
+                tpCar:   vals.tpCar,
+                uf:      vals.ufVeic,
+                tara:    Number(vals.tara) || 0,
+                capKG:   vals.capKG  ? Number(vals.capKG)  : undefined,
+                capM3:   vals.capM3  ? Number(vals.capM3)  : undefined,
+                renavam: vals.renavam || undefined,
+                prop:    vals.prop ? {
+                    rntrc:  vals.prop.rntrc,
+                    xNome:  vals.prop.xNome,
+                    tpProp: Number(vals.prop.tpProp),
+                    cpf:    vals.prop.cpfCnpj === 'cpf'  ? vals.prop.cpf?.replace(/\D/g,'') || undefined : undefined,
+                    cnpj:   vals.prop.cpfCnpj === 'cnpj' ? vals.prop.cnpj?.replace(/\D/g,'') || undefined : undefined,
+                    ie:     vals.prop.ie  || undefined,
+                    uf:     vals.prop.uf  || undefined,
+                } : undefined,
+            }, vals.veicReboque.map(r => ({
+                placa:   r.placa,
+                tpCar:   r.tpCar,
+                tara:    Number(r.tara) || 0,
+                capKG:   r.capKG  ? Number(r.capKG)  : undefined,
+                capM3:   r.capM3  ? Number(r.capM3)  : undefined,
+                uf:      r.ufVeic || undefined,
+                renavam: r.renavam || undefined,
+                prop:    r.prop ? {
+                    rntrc:  r.prop.rntrc,
+                    xNome:  r.prop.xNome,
+                    tpProp: Number(r.prop.tpProp),
+                    cpf:    r.prop.cpfCnpj === 'cpf'  ? r.prop.cpf?.replace(/\D/g,'') || undefined : undefined,
+                    cnpj:   r.prop.cpfCnpj === 'cnpj' ? r.prop.cnpj?.replace(/\D/g,'') || undefined : undefined,
+                    ie:     r.prop.ie  || undefined,
+                    uf:     r.prop.uf  || undefined,
+                } : undefined,
+            })))
             .addCondutor({ xNome: vals.condNome, cpf: vals.condCpf })
             .addCtes(ctesSelecionados)
             .buildTot({ vCarga: Number(vals.vCarga), qCarga: Number(vals.qCarga), cUnid: vals.cUnid })
@@ -587,46 +1166,99 @@ export default function EmitirMdfePage() {
         )
     })
 
+    function recalcTotals(map: Record<string, { peso: number; valor: number }>, selected: CteSelecionado[]) {
+        const chaves = new Set(selected.map(c => c.chave))
+        const entries = Object.entries(map).filter(([k]) => chaves.has(k)).map(([, v]) => v)
+        const totalPeso  = entries.reduce((s, d) => s + d.peso,  0)
+        const totalValor = entries.reduce((s, d) => s + d.valor, 0)
+        if (totalPeso  > 0) setValue('qCarga', String(Math.round(totalPeso  * 1000) / 1000))
+        if (totalValor > 0) setValue('vCarga', totalValor.toFixed(2))
+    }
+
     function toggleCte(cte: any) {
         const chave = cte.chave ?? ''
         if (!chave) return toast.error('CT-e sem chave de acesso.')
         const exists = ctesSelecionados.some(c => c.chave === chave)
+
         if (exists) {
-            setCtesSelecionados(prev => prev.filter(c => c.chave !== chave))
+            const newSelected = ctesSelecionados.filter(c => c.chave !== chave)
+            setCtesSelecionados(newSelected)
+            const newMap = { ...cteDataMap }
+            delete newMap[chave]
+            setCteDataMap(newMap)
+            recalcTotals(newMap, newSelected)
         } else {
-            setCtesSelecionados(prev => [...prev, { chave, cMunDescarga: '', xMunDescarga: cte.nomeDestinatario ?? '' }])
+            const newSelected = [...ctesSelecionados, { chave, cMunDescarga: '', xMunDescarga: cte.nomeDestinatario ?? '' }]
+            setCtesSelecionados(newSelected)
+
             fetch(`/api/ctes/${cte.id}`).then(r => r.json()).then(full => {
-                const dest  = full.infCte?.dest
-                const ender = dest?.enderDest ?? {}
+                const ide      = full.infCte?.ide ?? {}
+                const dest     = full.infCte?.dest ?? {}
+                const ender    = dest.enderDest ?? {}
+                const infCarga = full.infCte?.infCTeNorm?.infCarga ?? {}
+
+                const cMunCarrega  = String(ide.cMunIni ?? '')
+                const xMunCarrega  = ide.xMunIni ?? ''
+                const cMunDescarga = String(ender.cMun ?? ide.cMunFim ?? '')
+                const xMunDescarga = ender.xMun ?? ide.xMunFim ?? dest.xNome ?? ''
+                const ufIniCte     = ide.UFIni ?? ''
+                const ufFimCte     = ide.UFFim ?? ''
+
+                // Atualiza UF de carregamento e descarregamento
+                if (ufIniCte) setValue('ufIni', ufIniCte)
+                if (ufFimCte) setValue('ufFim', ufFimCte)
+
+                // Peso: pega a qtCarga com tpMed de PESO ou a primeira disponível
+                const qtArr = Array.isArray(infCarga.qtCarga) ? infCarga.qtCarga
+                    : infCarga.qtCarga ? [infCarga.qtCarga] : []
+                let peso = 0
+                for (const qt of qtArr) {
+                    if (String(qt.cUnid) === '02' || String(qt.tpMed ?? '').toUpperCase().includes('PESO')) {
+                        peso = Number(qt.qCarga) || 0; break
+                    }
+                }
+                if (!peso && qtArr.length > 0) peso = Number(qtArr[0].qCarga) || 0
+
+                const valor = Number(infCarga.vCarga) || Number(full.infCte?.vPrest?.vTPrest) || 0
+
+                // Atualiza cMunDescarga no array de selecionados
                 setCtesSelecionados(prev => prev.map(c =>
-                    c.chave === chave
-                        ? { ...c, cMunDescarga: String(ender.cMun ?? ''), xMunDescarga: ender.xMun ?? dest?.xNome ?? '' }
-                        : c
+                    c.chave === chave ? { ...c, cMunDescarga, xMunDescarga } : c
                 ))
+
+                // Atualiza mapa e recalcula
+                const newMap = { ...cteDataMap, [chave]: { cMunCarrega, xMunCarrega, cMunDescarga, xMunDescarga, peso, valor } }
+                setCteDataMap(newMap)
+                recalcTotals(newMap, newSelected)
+
+                // Adiciona munCarrega se ainda não existir
+                if (cMunCarrega) {
+                    const curCarrega = getValues('munCarrega') ?? []
+                    if (!curCarrega.some((m: any) => String(m.cMun) === cMunCarrega)) {
+                        addMunCarrega({ cMun: cMunCarrega, xMun: xMunCarrega })
+                    }
+                }
+
+                // Adiciona munDescarga se ainda não existir
+                if (cMunDescarga) {
+                    const curDescarga = getValues('munDescarga') ?? []
+                    if (!curDescarga.some((m: any) => String(m.cMun) === cMunDescarga)) {
+                        addMunDescarga({ cMun: cMunDescarga, xMun: xMunDescarga })
+                    }
+                }
             }).catch(() => {})
         }
     }
 
     const tabError = {
         percurso: !!(errors.munCarrega),
-        veiculo:  !!(errors.placa || errors.tpRod || errors.tpCar || errors.ufVeic || errors.condNome || errors.condCpf || errors.rntrc),
+        veiculo:  !!(errors.placa || errors.tpRod || errors.tpCar || errors.condNome || errors.condCpf || errors.rntrc || errors.tara || errors.veicReboque),
         totais:   !!(errors.vCarga || errors.qCarga),
     }
 
     return (
         <main className="min-h-screen bg-slate-50 text-slate-900">
-            <header className="sticky top-0 z-10 bg-white border-b shadow-sm">
-                <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-3">
-                    <Link href="/mdfe" className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">F</div>
-                        <span className="font-semibold text-slate-800">FreteCalc</span>
-                    </Link>
-                    <span className="text-slate-300">/</span>
-                    <Link href="/mdfe" className="text-sm text-slate-500 hover:text-slate-700">MDF-e</Link>
-                    <span className="text-slate-300">/</span>
-                    <span className="text-sm text-slate-500">Emitir</span>
-                </div>
-            </header>
+            <Navbar />
 
             <div className="max-w-7xl mx-auto px-6 py-8 space-y-5">
                 <div>
@@ -791,43 +1423,244 @@ export default function EmitirMdfePage() {
 
                     {/* ── Veículo / Condutor ── */}
                     <TabsContent value="veiculo">
-                        <Card title="Informações ANTT / Veículo">
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <Controller name="rntrc" control={control} render={({ field, fieldState }) => (
-                                    <Field label="RNTRC" error={fieldState.error?.message}
-                                        value={field.value} onChange={v => field.onChange(maskRntrc(v))}
-                                        placeholder="00000000" mono />
-                                )} />
-                                <Controller name="placa" control={control} render={({ field, fieldState }) => (
-                                    <Field label="Placa do Veículo" error={fieldState.error?.message}
-                                        value={field.value} onChange={v => field.onChange(maskPlaca(v))}
-                                        placeholder="ABC1D23" mono />
-                                )} />
-                                <Controller name="tpRod" control={control} render={({ field, fieldState }) => (
-                                    <SelectField label="Tipo de Rodado" value={field.value} onChange={field.onChange}
-                                        options={TP_ROD} error={fieldState.error?.message} />
-                                )} />
-                                <Controller name="tpCar" control={control} render={({ field, fieldState }) => (
-                                    <SelectField label="Tipo de Carroceria" value={field.value} onChange={field.onChange}
-                                        options={TP_CAR} error={fieldState.error?.message} />
-                                )} />
+                        <div className="space-y-4 mt-2">
+
+                            {/* Row 1 — Motorista */}
+                            <div className="bg-white rounded-2xl border shadow-sm">
+                                <div className="px-5 py-3 border-b">
+                                    <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Motorista</h2>
+                                </div>
+                                <div className="p-5 space-y-4">
+                                    {/* Busca */}
+                                    <div>
+                                        <Label className="text-xs text-slate-600 mb-1 block">Buscar motorista cadastrado</Label>
+                                        <MotoristaSearch onSelect={m => {
+                                            setValue('condNome', m.xNome)
+                                            setValue('condCpf', m.cpf?.replace(/\D/g, '') ?? '')
+                                        }} />
+                                    </div>
+
+                                    {/* Campos */}
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <div className="md:col-span-3">
+                                            <Controller name="condNome" control={control} render={({ field, fieldState }) => (
+                                                <Field label="Nome" error={fieldState.error?.message}
+                                                    value={field.value} onChange={field.onChange} placeholder="Nome completo" />
+                                            )} />
+                                        </div>
+                                        <Controller name="condCpf" control={control} render={({ field, fieldState }) => (
+                                            <Field label="CPF" error={fieldState.error?.message}
+                                                value={maskCpf(field.value)} onChange={v => field.onChange(v.replace(/\D/g, ''))}
+                                                placeholder="000.000.000-00" mono />
+                                        )} />
+                                    </div>
+
+                                    {/* Cadastrar novo */}
+                                    {watch('condNome') && (watch('condCpf') ?? '').length >= 11 && (
+                                        <button type="button"
+                                            onClick={async () => {
+                                                try {
+                                                    await fetch('/api/parceiros', {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({
+                                                            tipoPessoa: 'F',
+                                                            xNome: watch('condNome'),
+                                                            cpf: (watch('condCpf') ?? '').replace(/\D/g, ''),
+                                                        }),
+                                                    })
+                                                    toast.success('Motorista salvo nos parceiros.')
+                                                } catch {
+                                                    toast.error('Erro ao salvar motorista.')
+                                                }
+                                            }}
+                                            className="text-xs text-sky-600 hover:text-sky-700 hover:underline"
+                                        >
+                                            + Salvar motorista nos parceiros
+                                        </button>
+                                    )}
+                                </div>
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <Controller name="ufVeic" control={control} render={({ field, fieldState }) => (
-                                    <UfSelect label="UF do Veículo" value={field.value} onChange={field.onChange}
-                                        error={fieldState.error?.message} />
-                                )} />
-                                <Controller name="condNome" control={control} render={({ field, fieldState }) => (
-                                    <Field label="Nome do Condutor" error={fieldState.error?.message}
-                                        value={field.value} onChange={field.onChange} placeholder="Nome completo" />
-                                )} />
-                                <Controller name="condCpf" control={control} render={({ field, fieldState }) => (
-                                    <Field label="CPF do Condutor" error={fieldState.error?.message}
-                                        value={maskCpf(field.value)} onChange={v => field.onChange(v.replace(/\D/g, ''))}
-                                        placeholder="000.000.000-00" mono />
-                                )} />
+
+                            {/* Row 2 — Veículo de Tração */}
+                            <div className="bg-white rounded-2xl border shadow-sm">
+                                <div className="px-5 py-3 border-b flex items-center justify-between">
+                                    <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Veículo de Tração</h2>
+                                    <div className="flex items-center gap-2">
+                                        <button type="button" onClick={() => {
+                                            setValue('renavam', ''); setValue('tara', ''); setValue('capKG', ''); setValue('capM3', '')
+                                            setValue('tpRod', '01'); setValue('tpCar', '00'); setValue('ufVeic', 'RO')
+                                            setValue('prop', undefined); setPropIdTracao(null); setShowPropTracao(false)
+                                            setModalTracao(true)
+                                        }}
+                                            className="flex items-center gap-1.5 text-xs bg-sky-50 hover:bg-sky-100 text-sky-600 px-2.5 py-1 rounded-lg transition-colors font-medium">
+                                            + Novo veículo
+                                        </button>
+                                        <button type="button" onClick={() => setModalTracao(true)}
+                                            className="flex items-center gap-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2.5 py-1 rounded-lg transition-colors">
+                                            <PenLine className="h-3 w-3" />
+                                            Editar cadastro
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="p-5">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <Controller name="placa" control={control} render={({ field, fieldState }) => (
+                                            <PlacaInput value={field.value} onChange={field.onChange}
+                                                error={fieldState.error?.message}
+                                                onSelect={v => {
+                                                    field.onChange(v.placa)
+                                                    setValue('renavam', v.renavam ?? '')
+                                                    setValue('tara',    String(v.tara))
+                                                    setValue('capKG',   v.capKG != null ? String(v.capKG) : '')
+                                                    setValue('capM3',   v.capM3 != null ? String(v.capM3) : '')
+                                                    setValue('tpRod',   v.tpRod)
+                                                    setValue('tpCar',   v.tpCar)
+                                                    setValue('ufVeic',  v.uf ?? 'RO')
+                                                    if (v.rntrc) setValue('rntrc', v.rntrc)
+                                                    if (v.proprietario) {
+                                                        const p = v.proprietario
+                                                        setPropIdTracao(p.id); setShowPropTracao(true)
+                                                        setValue('prop', { cpfCnpj: p.cpf ? 'cpf' : 'cnpj', cpf: p.cpf ?? '', cnpj: p.cnpj ?? '', rntrc: p.rntrc, xNome: p.xNome, ie: p.ie ?? '', uf: p.uf ?? '', tpProp: String(p.tpProp) })
+                                                    } else {
+                                                        setPropIdTracao(null); setShowPropTracao(false); setValue('prop', undefined)
+                                                    }
+                                                }} />
+                                        )} />
+                                        <Controller name="tpRod" control={control} render={({ field, fieldState }) => (
+                                            <SelectField label="Tipo de Rodado" value={field.value} onChange={field.onChange}
+                                                options={TP_ROD} error={fieldState.error?.message} />
+                                        )} />
+                                        <Controller name="tpCar" control={control} render={({ field, fieldState }) => (
+                                            <SelectField label="Tipo de Carroceria" value={field.value} onChange={field.onChange}
+                                                options={TP_CAR} error={fieldState.error?.message} />
+                                        )} />
+                                        <Controller name="tara" control={control} render={({ field, fieldState }) => (
+                                            <Field label="Tara (KG) *" error={fieldState.error?.message}
+                                                value={field.value} onChange={v => field.onChange(v.replace(/\D/g, ''))} placeholder="0" mono />
+                                        )} />
+                                    </div>
+                                    {showPropTracao && watch('prop.xNome') && (
+                                        <p className="mt-2 text-xs text-amber-600">Proprietário: {watch('prop.xNome')}</p>
+                                    )}
+                                </div>
                             </div>
-                        </Card>
+
+                            <VeiculoDetalheModal
+                                open={modalTracao} onClose={() => setModalTracao(false)}
+                                isTracao fieldPrefix=""
+                                control={control} errors={errors} setValue={setValue} getValues={getValues} watch={watch}
+                                showProp={showPropTracao} setShowProp={setShowPropTracao}
+                                propId={propIdTracao} onPropId={setPropIdTracao}
+                            />
+
+                            {/* Row 3 — Reboques */}
+                            <div className="bg-white rounded-2xl border shadow-sm">
+                                <div className="px-5 py-3 border-b flex items-center justify-between">
+                                    <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                                        Reboques ({reboqueFields.length}/3)
+                                    </h2>
+                                    {reboqueFields.length < 3 && (
+                                        <div className="flex items-center gap-2">
+                                            <button type="button"
+                                                onClick={() => addReboque({ placa: '', renavam: '', tara: '', capKG: '', capM3: '', tpCar: '00', ufVeic: '' })}
+                                                className="text-[11px] text-slate-500 hover:text-slate-700 font-medium hover:underline">
+                                                + Adicionar
+                                            </button>
+                                            <button type="button"
+                                                onClick={() => {
+                                                    addReboque({ placa: '', renavam: '', tara: '', capKG: '', capM3: '', tpCar: '00', ufVeic: '' })
+                                                    setModalReboqueIdx(reboqueFields.length)
+                                                }}
+                                                className="flex items-center gap-1 text-[11px] bg-sky-50 hover:bg-sky-100 text-sky-600 px-2 py-0.5 rounded-md transition-colors font-medium">
+                                                + Cadastrar reboque
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="p-5 space-y-3">
+                                    {reboqueFields.length === 0 && (
+                                        <p className="text-xs text-slate-400">Nenhum reboque adicionado.</p>
+                                    )}
+                                    {reboqueFields.map((f, i) => (
+                                        <div key={f.id} className="border rounded-xl p-4 bg-slate-50">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <span className="text-xs font-semibold text-slate-500">Reboque {i + 1}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <button type="button" onClick={() => {
+                                                        setValue(`veicReboque.${i}.renavam`, ''); setValue(`veicReboque.${i}.tara`, '')
+                                                        setValue(`veicReboque.${i}.capKG`, ''); setValue(`veicReboque.${i}.capM3`, '')
+                                                        setValue(`veicReboque.${i}.tpCar`, '00'); setValue(`veicReboque.${i}.ufVeic`, '')
+                                                        setValue(`veicReboque.${i}.prop`, undefined)
+                                                        const cur = [...propIdReboques]; cur[i] = null; setPropIdReboques(cur)
+                                                        const show = [...showPropReboques]; show[i] = false; setShowPropReboques(show)
+                                                        setModalReboqueIdx(i)
+                                                    }}
+                                                        className="flex items-center gap-1 text-xs bg-sky-50 hover:bg-sky-100 text-sky-600 px-2 py-0.5 rounded-md transition-colors font-medium">
+                                                        + Novo
+                                                    </button>
+                                                    <button type="button" onClick={() => setModalReboqueIdx(i)}
+                                                        className="flex items-center gap-1 text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-0.5 rounded-md transition-colors">
+                                                        <PenLine className="h-3 w-3" />Editar
+                                                    </button>
+                                                    <button type="button" onClick={() => removeReboque(i)}
+                                                        className="text-xs text-red-400 hover:text-red-600">Remover</button>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                <Controller name={`veicReboque.${i}.placa`} control={control} render={({ field, fieldState }) => (
+                                                    <PlacaInput value={field.value} onChange={field.onChange}
+                                                        error={fieldState.error?.message}
+                                                        onSelect={v => {
+                                                            field.onChange(v.placa)
+                                                            setValue(`veicReboque.${i}.renavam`, v.renavam ?? '')
+                                                            setValue(`veicReboque.${i}.tara`,    String(v.tara))
+                                                            setValue(`veicReboque.${i}.capKG`,   v.capKG != null ? String(v.capKG) : '')
+                                                            setValue(`veicReboque.${i}.capM3`,   v.capM3 != null ? String(v.capM3) : '')
+                                                            setValue(`veicReboque.${i}.tpCar`,   v.tpCar)
+                                                            setValue(`veicReboque.${i}.ufVeic`,  v.uf ?? '')
+                                                            if (v.proprietario) {
+                                                                const p = v.proprietario
+                                                                const cur = [...propIdReboques]; cur[i] = p.id; setPropIdReboques(cur)
+                                                                const show = [...showPropReboques]; show[i] = true; setShowPropReboques(show)
+                                                                setValue(`veicReboque.${i}.prop`, { cpfCnpj: p.cpf ? 'cpf' : 'cnpj', cpf: p.cpf ?? '', cnpj: p.cnpj ?? '', rntrc: p.rntrc, xNome: p.xNome, ie: p.ie ?? '', uf: p.uf ?? '', tpProp: String(p.tpProp) })
+                                                            } else {
+                                                                const cur = [...propIdReboques]; cur[i] = null; setPropIdReboques(cur)
+                                                                const show = [...showPropReboques]; show[i] = false; setShowPropReboques(show)
+                                                                setValue(`veicReboque.${i}.prop`, undefined)
+                                                            }
+                                                        }} />
+                                                )} />
+                                                <Controller name={`veicReboque.${i}.tpCar`} control={control} render={({ field, fieldState }) => (
+                                                    <SelectField label="Tipo de Carroceria" value={field.value} onChange={field.onChange}
+                                                        options={TP_CAR} error={fieldState.error?.message} />
+                                                )} />
+                                                <Controller name={`veicReboque.${i}.tara`} control={control} render={({ field, fieldState }) => (
+                                                    <Field label="Tara (KG) *" error={fieldState.error?.message}
+                                                        value={field.value} onChange={v => field.onChange(v.replace(/\D/g, ''))} placeholder="0" mono />
+                                                )} />
+                                            </div>
+                                            {showPropReboques[i] && watch(`veicReboque.${i}.prop.xNome` as any) && (
+                                                <p className="mt-2 text-xs text-amber-600">Proprietário: {watch(`veicReboque.${i}.prop.xNome` as any)}</p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {modalReboqueIdx !== null && (
+                                <VeiculoDetalheModal
+                                    open onClose={() => setModalReboqueIdx(null)}
+                                    isTracao={false} fieldPrefix={`veicReboque.${modalReboqueIdx}`}
+                                    control={control} errors={errors} setValue={setValue} getValues={getValues} watch={watch}
+                                    showProp={showPropReboques[modalReboqueIdx] ?? false}
+                                    setShowProp={v => { const cur = [...showPropReboques]; cur[modalReboqueIdx!] = v; setShowPropReboques(cur) }}
+                                    propId={propIdReboques[modalReboqueIdx] ?? null}
+                                    onPropId={id => { const cur = [...propIdReboques]; cur[modalReboqueIdx!] = id; setPropIdReboques(cur) }}
+                                />
+                            )}
+
+                        </div>
                     </TabsContent>
 
                     {/* ── CT-es ── */}

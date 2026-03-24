@@ -20,6 +20,8 @@ export type EmpresaConfig = {
     ufEnv: string
     sequenciaCte: number
     serie: number
+    sequenciaMdfe: number
+    serieMdfe: number
     // Endereço
     xLgr: string
     nro: string
@@ -33,7 +35,7 @@ export type EmpresaConfig = {
 const DEFAULT_CONFIG: EmpresaConfig = {
     razaoSocial: '', nomeFantasia: '', cnpj: '', ie: '', crt: '3',
     rntrc: '', cuf: '', cMunEnv: '', xMunEnv: '', ufEnv: '',
-    sequenciaCte: 1, serie: 99,
+    sequenciaCte: 1, serie: 99, sequenciaMdfe: 1, serieMdfe: 1,
     xLgr: '', nro: '', xCompl: '', xBairro: '', cep: '', fone: '', email: '',
 }
 

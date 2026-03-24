@@ -38,15 +38,39 @@ export interface CteSelecionado {
     xMunDescarga: string    // nome do município de descarga
 }
 
+export interface PropVeiculo {
+    rntrc:  string
+    xNome:  string
+    tpProp: number          // 0=TAC Agregado, 1=TAC Independente, 2=Outros
+    cpf?:   string
+    cnpj?:  string
+    ie?:    string
+    uf?:    string
+}
+
 export interface VeicTracao {
-    placa: string
-    tpRod: string   // '01'=Truck, '02'=Toco, '03'=Cavalo, '04'=VAN, '05'=Utilitário, '06'=Outros
-    tpCar: string   // '00'=N/A, '01'=Aberta, '02'=Fechada/Baú, '03'=Graneleira, '04'=Porta Container, '05'=Sider
-    uf: string
-    tara?: number
-    capKG?: number
-    cInt?: string
+    placa:   string
+    tpRod:   string
+    tpCar:   string
+    uf:      string
+    tara:    number
+    capKG?:  number
+    capM3?:  number
+    cInt?:   string
     renavam?: string
+    prop?:   PropVeiculo
+}
+
+export interface VeicReboque {
+    placa:   string
+    tpCar:   string
+    tara:    number
+    capKG?:  number
+    capM3?:  number
+    uf?:     string
+    renavam?: string
+    cInt?:   string
+    prop?:   PropVeiculo
 }
 
 export interface Condutor {
@@ -131,25 +155,49 @@ export class MdfeBuilder {
         return this
     }
 
-    buildRodo(veic: VeicTracao) {
+    buildRodo(veic: VeicTracao, reboque?: VeicReboque[]) {
+        const buildProp = (p: PropVeiculo) => omitNil({
+            ...omitNil({ CPF: p.cpf?.replace(/\D/g, '') || undefined, CNPJ: p.cnpj?.replace(/\D/g, '') || undefined }),
+            RNTRC:  p.rntrc,
+            xNome:  p.xNome,
+            IE:     p.ie  || undefined,
+            UF:     p.uf  || undefined,
+            tpProp: p.tpProp,
+        })
+
         this.rodo = {
             infANTT: {
                 RNTRC: this.empresa.rntrc ?? '',
             },
             veicTracao: omitNil({
-                cInt: veic.cInt || '01',
-                placa: veic.placa.replace(/[^A-Z0-9]/gi, '').toUpperCase(),
-                tpRod: veic.tpRod,
-                tpCar: veic.tpCar,
-                UF: veic.uf,
-                tara: veic.tara,
-                capKG: veic.capKG,
+                cInt:    veic.cInt || '01',
+                placa:   veic.placa.replace(/[^A-Z0-9]/gi, '').toUpperCase(),
+                tpRod:   veic.tpRod,
+                tpCar:   veic.tpCar,
+                UF:      veic.uf || undefined,
+                tara:    veic.tara,
+                capKG:   veic.capKG || undefined,
+                capM3:   veic.capM3 || undefined,
                 RENAVAM: veic.renavam || undefined,
                 condutor: this.condutores.map(c => ({
                     xNome: c.xNome,
-                    CPF: c.cpf.replace(/\D/g, ''),
+                    CPF:   c.cpf.replace(/\D/g, ''),
                 })),
+                prop: veic.prop ? buildProp(veic.prop) : undefined,
             }),
+            ...(reboque?.length ? {
+                veicReboque: reboque.map(r => omitNil({
+                    cInt:    r.cInt || undefined,
+                    placa:   r.placa.replace(/[^A-Z0-9]/gi, '').toUpperCase(),
+                    tpCar:   r.tpCar,
+                    UF:      r.uf || undefined,
+                    tara:    r.tara,
+                    capKG:   r.capKG || undefined,
+                    capM3:   r.capM3 || undefined,
+                    RENAVAM: r.renavam || undefined,
+                    prop:    r.prop ? buildProp(r.prop) : undefined,
+                })),
+            } : {}),
         }
         return this
     }

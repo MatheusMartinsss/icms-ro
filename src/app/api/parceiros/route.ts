@@ -8,14 +8,21 @@ export async function GET(req: Request) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { searchParams } = new URL(req.url)
-    const q = searchParams.get('q')
+    const q    = searchParams.get('q')
     const cnpj = searchParams.get('cnpj')?.replace(/\D/g, '')
+    const cpf  = searchParams.get('cpf')?.replace(/\D/g, '')
 
     const parceiros = await prisma.parceiro.findMany({
         where: {
             empresaId: session.user.empresaId,
             ...(cnpj ? { cnpj } : {}),
-            ...(q && !cnpj ? { xNome: { contains: q, mode: 'insensitive' } } : {}),
+            ...(cpf  ? { cpf  } : {}),
+            ...(q && !cnpj && !cpf ? {
+                OR: [
+                    { xNome: { contains: q, mode: 'insensitive' } },
+                    { cpf:   { contains: q.replace(/\D/g, '') } },
+                ],
+            } : {}),
         },
         orderBy: { xNome: 'asc' },
         take: 50,

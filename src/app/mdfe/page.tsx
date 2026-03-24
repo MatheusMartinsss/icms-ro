@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { imprimirMdfe, encerrarMdfe, cancelarMdfe } from '@/services/mdfe'
 import { useEmpresaConfig } from '@/components/configuracoes-empresa'
+import { Navbar } from '@/components/navbar'
 
 interface MdfeItem {
     id: string
@@ -104,16 +105,7 @@ export default function MdfePage() {
 
     return (
         <main className="min-h-screen bg-slate-50 text-slate-900">
-            <header className="sticky top-0 z-10 bg-white border-b shadow-sm">
-                <div className="max-w-6xl mx-auto px-6 h-14 flex items-center gap-3">
-                    <Link href="/" className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">F</div>
-                        <span className="font-semibold text-slate-800">FreteCalc</span>
-                    </Link>
-                    <span className="text-slate-300">/</span>
-                    <span className="text-sm text-slate-500">MDF-e</span>
-                </div>
-            </header>
+            <Navbar />
 
             <div className="max-w-6xl mx-auto px-6 py-8 space-y-4">
                 {/* Header */}
