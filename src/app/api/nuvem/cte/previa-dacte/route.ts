@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { adaptToMicroservice, adaptResponse } from '@/lib/cte/microservice-adapters'
+import { adaptToMicroservice } from '@/lib/cte/microservice-adapters'
 import { NextResponse } from 'next/server'
 
 const MICROSERVICE_URL = process.env.NFE_MICROSERVICE_URL!
@@ -25,15 +25,13 @@ export async function POST(req: Request) {
 
     const payload = adaptToMicroservice(infCte, empresa)
 
-    console.log('CTE_MICROSERVICE_PAYLOAD =>', JSON.stringify(payload, null, 2))
-
     let res: Response
     try {
-        res = await fetch(`${MICROSERVICE_URL}/api/v1/cte`, {
+        res = await fetch(`${MICROSERVICE_URL}/api/v1/cte/previa-dacte`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json',
+                'Accept': 'application/pdf',
                 'X-API-Key': empresa.nfeMicroserviceApiKey,
             },
             body: JSON.stringify(payload),
@@ -45,25 +43,21 @@ export async function POST(req: Request) {
         )
     }
 
-    const text = await res.text()
-    let data: any
-    try {
-        data = JSON.parse(text)
-    } catch {
-        console.error('CTE_MICROSERVICE_RESPONSE (non-JSON) =>', text.slice(0, 500))
-        return NextResponse.json(
-            { error: 'Resposta inválida do servidor fiscal', details: text.slice(0, 200) },
-            { status: 502 }
-        )
-    }
-
     if (!res.ok) {
-        console.error('CTE_MICROSERVICE_ERROR =>', res.status, JSON.stringify(data))
+        const text = await res.text()
         return NextResponse.json(
-            { error: 'Falha ao emitir CT-e', details: data },
+            { error: 'Falha ao gerar pré-DACTE', details: text.slice(0, 200) },
             { status: res.status }
         )
     }
 
-    return NextResponse.json(adaptResponse(data))
+    const pdf = await res.arrayBuffer()
+
+    return new Response(pdf, {
+        status: 200,
+        headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'inline; filename="previa-dacte.pdf"',
+        },
+    })
 }

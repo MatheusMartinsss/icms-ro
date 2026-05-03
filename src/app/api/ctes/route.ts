@@ -40,7 +40,7 @@ export async function GET(req: Request) {
                 id: true, status: true, nCT: true, serie: true,
                 nomeRemetente: true, nomeDestinatario: true, nomeTomador: true,
                 valorTotal: true, dhEmi: true,
-                idNuvem: true, chave: true,
+                idNuvem: true, chave: true, erroMsg: true,
                 createdAt: true, updatedAt: true,
             },
         }),

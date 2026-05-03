@@ -6,7 +6,7 @@ import { signOut } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 
 const NAV_ITEMS = [
-    { label: 'CT-e',          href: '/'               },
+    { label: 'CT-e',          href: '/cte'             },
     { label: 'MDF-e',         href: '/mdfe'            },
     { label: 'Calculadora',   href: '/calculadora'     },
     { label: 'Configurações', href: '/configuracoes'   },
@@ -16,14 +16,13 @@ export function Navbar() {
     const pathname = usePathname()
 
     function isActive(href: string) {
-        if (href === '/') return pathname === '/'
         return pathname === href || pathname.startsWith(href + '/')
     }
 
     return (
         <header className="sticky top-0 z-10 bg-white border-b shadow-sm">
             <div className="max-w-6xl mx-auto px-6 h-14 flex items-center gap-6">
-                <Link href="/" className="flex items-center gap-2.5 shrink-0">
+                <Link href="/cte" className="flex items-center gap-2.5 shrink-0">
                     <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">F</div>
                     <span className="font-semibold text-slate-800">FreteCalc</span>
                 </Link>

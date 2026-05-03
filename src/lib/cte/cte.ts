@@ -181,25 +181,24 @@ export class CtePartesBuilder {
     }
 
     buildImp(
-        override?: DeepPartial<typeof this.imp> | { vBC?: number; pICMS?: number; vICMS?: number }
+        override?: { vBC?: number; pICMS?: number; vICMS?: number; cst?: string }
     ) {
-        const vBC = (override as any)?.vBC ?? 18905.42
-        const pICMS = (override as any)?.pICMS ?? 12.0
-        const vICMS = (override as any)?.vICMS ?? 2268.65
+        const cst = override?.cst ?? '00'
 
-        const base = {
-            ICMS: {
-                ICMS00: {
-                    CST: '00',
-                    vBC,
-                    pICMS,
-                    vICMS,
-                },
-            },
-        }
+        // CSTs sem base de cálculo (isento, não tributado, diferimento, etc.)
+        const semBC = ['40', '41', '51', '90'].includes(cst)
 
-        const { vBC: _v, pICMS: _p, vICMS: _i, ...rest } = (override as any) ?? {}
-        this.imp = mergeNested(base as any, rest as any)
+        const vBC   = semBC ? 0 : (override?.vBC   ?? 0)
+        const pICMS = semBC ? 0 : (override?.pICMS ?? 12.0)
+        const vICMS = semBC ? 0 : (override?.vICMS ?? 0)
+
+        const groupKey = `ICMS${cst.padStart(2, '0')}` // ICMS00, ICMS40, etc.
+
+        const icmsFields = semBC
+            ? { CST: cst }
+            : { CST: cst, vBC, pICMS, vICMS }
+
+        this.imp = { ICMS: { [groupKey]: icmsFields } }
         return this
     }
 
@@ -242,11 +241,7 @@ export class CtePartesBuilder {
     }
 
     buildEmitente(override?: DeepPartial<typeof this.emit>) {
-        const base = {
-            CNPJ: '29180936000123',
-            IE: '000004925301',
-            CRT: 3,
-        }
+        const base = { CRT: 3 }
         this.emit = mergeNested(base as any, omitEmpty((override ?? {}) as any) as any)
         return this
     }

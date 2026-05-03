@@ -1,9 +1,10 @@
 'use client'
 
-import { imprimirCte } from '@/services/cte'
+import { imprimirCte, sincronizarCte } from '@/services/cte'
 import axios from 'axios'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import {
     ColumnDef,
     flexRender,
@@ -23,6 +24,7 @@ type CteItem = {
     dhEmi: string | null
     idNuvem: string | null
     chave: string | null
+    erroMsg: string | null
     createdAt: string
 }
 
@@ -51,6 +53,7 @@ const STATUS_BADGE: Record<string, string> = {
     cancelado:    'bg-red-100   text-red-700   border-red-200',
     rejeitado:    'bg-amber-100 text-amber-700 border-amber-200',
     rascunho:     'bg-slate-100 text-slate-600 border-slate-200',
+    erro:         'bg-red-100   text-red-700   border-red-200',
     desconhecido: 'bg-slate-100 text-slate-500 border-slate-200',
 }
 
@@ -59,6 +62,7 @@ const STATUS_LABEL: Record<string, string> = {
     cancelado:    'Cancelado',
     rejeitado:    'Rejeitado',
     rascunho:     'Rascunho',
+    erro:         'Erro',
     desconhecido: 'Desconhecido',
 }
 
@@ -133,25 +137,47 @@ export function CteEmitidos() {
     }
 
     async function cancelar(item: CteItem) {
-        if (!item.idNuvem) return alert('CT-e sem ID da Nuvem Fiscal — não pode ser cancelado aqui.')
-        if (!confirm('Tem certeza que deseja cancelar este CT-e?')) return
+        if (!item.chave) return alert('CT-e sem chave de acesso — não pode ser cancelado.')
+        const justificativa = prompt('Justificativa do cancelamento (mín. 15 caracteres):')
+        if (!justificativa) return
+        if (justificativa.trim().length < 15) return alert('Justificativa deve ter ao menos 15 caracteres.')
         try {
-            await axios.post(`/api/nuvem/cte/${item.idNuvem}/cancelar`, { justificativa: 'ERRO DE DIGITACAO' })
-            await fetch(`/api/ctes/${item.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: 'cancelado' }),
-            })
+            await axios.post(`/api/ctes/${item.id}/cancelar`, { justificativa })
             await load()
         } catch (e: any) {
-            alert(e?.response?.data?.error || e?.message || 'Erro ao cancelar CT-e')
+            const msg = e?.response?.data?.details?.message ?? e?.response?.data?.error ?? e?.message ?? 'Erro ao cancelar CT-e'
+            alert(msg)
+        }
+    }
+
+    async function sincronizar(item: CteItem) {
+        if (!confirm('Consultar SEFAZ e sincronizar este CT-e?')) return
+        try {
+            const result = await sincronizarCte(item.id)
+            console.log('SYNC_RESULT', result)
+            await load()
+        } catch (e: any) {
+            console.error('SYNC_ERROR', e?.response?.data ?? e)
+            alert(e?.response?.data?.error || e?.message || 'Erro ao sincronizar CT-e')
         }
     }
 
     async function imprimir(item: CteItem) {
-        if (!item.idNuvem) return alert('CT-e ainda não foi enviado à Nuvem Fiscal.')
-        try { await imprimirCte(item.idNuvem) }
-        catch (e: any) { alert(e?.message || 'Erro ao imprimir CT-e') }
+        if (!item.chave) return alert('CT-e ainda não possui chave de acesso.')
+        try { await imprimirCte(item.id) }
+        catch (e: any) { alert(e?.message || 'Erro ao gerar DACTE') }
+    }
+
+    async function excluir(item: CteItem) {
+        if (!confirm('Excluir este rascunho? Esta ação não pode ser desfeita.')) return
+        try {
+            const res = await fetch(`/api/ctes/${item.id}`, { method: 'DELETE' })
+            if (!res.ok) throw new Error('Falha ao excluir')
+            toast.success('Rascunho excluído.')
+            await load()
+        } catch {
+            toast.error('Não foi possível excluir o rascunho.')
+        }
     }
 
     const columns: ColumnDef<CteItem>[] = [
@@ -228,35 +254,66 @@ export function CteEmitidos() {
         {
             id: 'actions',
             header: '',
-            size: 148,
+            size: 120,
             cell: ({ row }) => {
                 const item = row.original
                 const isAutorizado = item.status === 'autorizado'
-                const isRascunho = item.status === 'rascunho'
+                const isRascunho   = item.status === 'rascunho'
+                const isErro       = item.status === 'erro'
+                const podeSync     = !!item.chave
+                const podeDacte    = !!item.chave
+                const ib = 'p-1.5 rounded-lg transition-colors text-slate-400 hover:text-slate-700 hover:bg-slate-100'
                 return (
-                    <div className="flex gap-1.5 justify-end">
-                        {isRascunho ? (
-                            <button
-                                onClick={() => router.push(`/cte/emitir?id=${item.id}`)}
-                                className="px-2.5 py-1 rounded-lg border border-sky-500 bg-sky-500 text-white text-xs hover:bg-sky-600 transition-colors font-medium"
-                            >
-                                Continuar
-                            </button>
-                        ) : (
-                            <button
-                                onClick={() => imprimir(item)}
-                                disabled={!item.idNuvem}
-                                className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs hover:bg-slate-50 disabled:opacity-40 transition-colors"
-                            >
-                                Imprimir
+                    <div className="flex items-center gap-0.5 justify-end">
+                        {/* Editar / Continuar / Abrir */}
+                        <button
+                            onClick={() => router.push(`/cte/emitir?id=${item.id}`)}
+                            title={isRascunho ? 'Continuar edição' : isErro ? 'Editar' : 'Abrir'}
+                            className={`${ib} ${(isRascunho || isErro) ? 'hover:text-sky-600 hover:bg-sky-50' : ''}`}
+                        >
+                            {(isRascunho || isErro)
+                                ? <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                : <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                            }
+                        </button>
+
+                        {/* Sincronizar */}
+                        {podeSync && (
+                            <button onClick={() => sincronizar(item)} title="Sincronizar com SEFAZ"
+                                className={`${ib} hover:text-amber-600 hover:bg-amber-50`}>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                </svg>
                             </button>
                         )}
+
+                        {/* DACTE */}
+                        {podeDacte && (
+                            <button onClick={() => imprimir(item)} title="Imprimir DACTE"
+                                className={`${ib} hover:text-emerald-600 hover:bg-emerald-50`}>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+                                </svg>
+                            </button>
+                        )}
+
+                        {/* Cancelar */}
                         {isAutorizado && (
-                            <button
-                                onClick={() => cancelar(item)}
-                                className="px-2.5 py-1 rounded-lg border border-red-200 text-red-600 text-xs hover:bg-red-50 transition-colors"
-                            >
-                                Cancelar
+                            <button onClick={() => cancelar(item)} title="Cancelar CT-e"
+                                className={`${ib} hover:text-red-600 hover:bg-red-50`}>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="12" r="10"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 9l-6 6M9 9l6 6"/>
+                                </svg>
+                            </button>
+                        )}
+
+                        {/* Excluir rascunho */}
+                        {(isRascunho || isErro) && (
+                            <button onClick={() => excluir(item)} title="Excluir rascunho"
+                                className={`${ib} hover:text-red-500 hover:bg-red-50`}>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
                             </button>
                         )}
                     </div>
@@ -378,7 +435,7 @@ export function CteEmitidos() {
             {/* ── Tabela ── */}
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                 <div className="overflow-x-auto">
-                    <table className="w-full border-collapse table-fixed">
+                    <table className="w-full border-collapse">
                         <colgroup>
                             <col style={{ width: 96 }} />
                             <col style={{ width: 108 }} />
@@ -387,7 +444,7 @@ export function CteEmitidos() {
                             <col />
                             <col style={{ width: 128 }} />
                             <col style={{ width: 96 }} />
-                            <col style={{ width: 148 }} />
+                            <col style={{ width: 120 }} />
                         </colgroup>
                         <thead className="bg-slate-700">
                             {table.getHeaderGroups().map(hg => (

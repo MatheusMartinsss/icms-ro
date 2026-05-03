@@ -23,6 +23,7 @@ model Empresa {
   serie         Int      @default(99)
   sequenciaMdfe Int      @default(1)  @map("sequencia_mdfe")
   serieMdfe     Int      @default(1)  @map("serie_mdfe")
+  nfeMicroserviceApiKey String? @map("nfe_microservice_api_key")
 
   // Endereço
   nomeFantasia String   @default("") @map("nome_fantasia")

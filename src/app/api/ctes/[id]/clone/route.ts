@@ -20,7 +20,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
             nomeRemetente: original.nomeRemetente,
             nomeDestinatario: original.nomeDestinatario,
             valorTotal: original.valorTotal,
-            infCte: original.infCte,
+            infCte: original.infCte ?? {},
         },
     })
 

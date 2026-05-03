@@ -1,9 +1,9 @@
 'use client'
 
-import { ChangeEvent, useEffect, useState } from 'react'
+import { ChangeEvent, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, useWatch, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import xml2js from 'xml2js'
@@ -15,10 +15,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import axios from 'axios'
 import { toast } from 'sonner'
-import { emitirCte, imprimirCte } from '@/services/cte'
+import { emitirCte, imprimirCte, previewDacte } from '@/services/cte'
 import { CtePartesBuilder } from '@/lib/cte/cte'
 import Indice from '../../indice.json'
-import { useEmpresaConfig } from '@/components/configuracoes-empresa'
+import { useEmpresaConfig, type EmpresaConfig } from '@/components/configuracoes-empresa'
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
@@ -41,8 +41,55 @@ const parteSchema = z.object({
     path: ['cnpj'],
 })
 
+export const CTE_CFOPS = [
+    // ── Estadual (5xxx) ──────────────────────────────────────────────
+    { code: '5351', natOp: 'Prestação de serviço de transporte para execução de serviço da mesma natureza' },
+    { code: '5352', natOp: 'Prestação de serviço de transporte a estabelecimento industrial' },
+    { code: '5353', natOp: 'Prestação de serviço de transporte a estabelecimento comercial' },
+    { code: '5354', natOp: 'Prestação de serviço de transporte a estabelecimento de prestador de serviço de comunicação' },
+    { code: '5355', natOp: 'Prestação de serviço de transporte a estabelecimento de geradora ou de distribuidora de energia elétrica' },
+    { code: '5356', natOp: 'Prestação de serviço de transporte a estabelecimento de produtor rural' },
+    { code: '5357', natOp: 'Prestação de serviço de transporte a não contribuinte' },
+    { code: '5359', natOp: 'Prestação de serviço de transporte a contribuinte ou a não contribuinte quando o tomador for o remetente ou destinatário da mercadoria' },
+    // ── Interestadual (6xxx) ─────────────────────────────────────────
+    { code: '6351', natOp: 'Prestação de serviço de transporte para execução de serviço da mesma natureza' },
+    { code: '6352', natOp: 'Prestação de serviço de transporte a estabelecimento industrial' },
+    { code: '6353', natOp: 'Prestação de serviço de transporte a estabelecimento comercial' },
+    { code: '6354', natOp: 'Prestação de serviço de transporte a estabelecimento de prestador de serviço de comunicação' },
+    { code: '6355', natOp: 'Prestação de serviço de transporte a estabelecimento de geradora ou de distribuidora de energia elétrica' },
+    { code: '6356', natOp: 'Prestação de serviço de transporte a estabelecimento de produtor rural' },
+    { code: '6357', natOp: 'Prestação de serviço de transporte a não contribuinte' },
+    { code: '6359', natOp: 'Prestação de serviço de transporte a contribuinte ou a não contribuinte quando o tomador for o remetente ou destinatário da mercadoria' },
+    // ── Exportação (7xxx) ────────────────────────────────────────────
+    { code: '7358', natOp: 'Prestação de serviço de transporte' },
+] as const
+
+const UF_LIST = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']
+
+const TP_ICMS_MAP: Record<string, string> = {
+    normal:        '00',
+    isento:        '40',
+    nao_tributado: '41',
+    outra_uf:      '90',
+}
+
+function cstToTpIcms(cst: string): string {
+    return { '00': 'normal', '20': 'normal', '40': 'isento', '41': 'nao_tributado', '90': 'outra_uf' }[cst] ?? 'normal'
+}
+
 const schema = z.object({
-    rem:  parteSchema,
+    dhEmi:   z.string().min(1),
+    tpCTe:   z.string(),
+    tpServ:  z.string(),
+    modal:   z.string(),
+    cfop:    z.string().min(1, 'Obrigatório'),
+    ufIni:   z.string(),
+    xMunIni: z.string(),
+    cMunIni: z.string(),
+    ufFim:   z.string(),
+    xMunFim: z.string(),
+    cMunFim: z.string(),
+    rem:     parteSchema,
     dest: parteSchema,
     toma: z.string(),
     carga: z.object({
@@ -54,9 +101,16 @@ const schema = z.object({
             .regex(/^([0-9]{8}|ISENTO)$/, 'Deve ter 8 dígitos ou "ISENTO"'),
     }),
     trib: z.object({
-        vTPrest: z.string().refine(v => Number(v) > 0, 'Obrigatório'),
-        pICMS:   z.string(),
-        cst:     z.string(),
+        comp: z.array(z.object({
+            xNome: z.string().min(1, 'Obrigatório'),
+            vComp: z.string(),
+        })).min(1).refine(
+            arr => arr.some(c => Number(c.vComp) > 0),
+            { message: 'Informe ao menos uma despesa com valor' }
+        ),
+        tpIcms: z.string(),
+        vBC:    z.string(),
+        pICMS:  z.string(),
     }),
     obs: z.string(),
 })
@@ -76,11 +130,22 @@ const emptyParte = () => ({
 
 function defaultValues(): FormValues {
     return {
-        rem:  emptyParte(),
+        dhEmi:   new Date().toISOString().slice(0, 10),
+        tpCTe:   '0',
+        tpServ:  '0',
+        modal:   '01',
+        cfop:    '6352',
+        ufIni:   '',
+        xMunIni: '',
+        cMunIni: '',
+        ufFim:   '',
+        xMunFim: '',
+        cMunFim: '',
+        rem:     emptyParte(),
         dest: emptyParte(),
         toma: '3',
         carga: { proPred: 'MADEIRA', peso: '', vCarga: '', rntrc: '' },
-        trib:  { vTPrest: '', pICMS: '12', cst: '00' },
+        trib:  { comp: [{ xNome: 'Valor do Frete', vComp: '' }], tpIcms: 'normal', vBC: '', pICMS: '12' },
         obs:   DEFAULT_OBS,
     }
 }
@@ -102,6 +167,38 @@ function parteFromEmit(emit: any) {
         uf:      e.UF   ?? '',
         cep:     String(e.CEP ?? '').replace(/\D/g, ''),
     }
+}
+
+function emitFromEmpresa(e: EmpresaConfig) {
+    const clean = (v: string | undefined) => (v && v.trim() !== '' ? v : undefined)
+    return {
+        CNPJ: clean(e.cnpj?.replace(/\D/g, '')),
+        IE:   clean(e.ie),
+        CRT:  Number(e.crt) || 3,
+        xNome: clean(e.razaoSocial),
+        xFant: clean(e.nomeFantasia),
+        fone:  clean(e.fone?.replace(/\D/g, '')),
+        email: clean(e.email),
+        enderEmit: {
+            xLgr:    clean(e.xLgr),
+            nro:     clean(e.nro),
+            xCpl:    clean(e.xCompl),
+            xBairro: clean(e.xBairro),
+            cMun:    clean(e.cMunEnv),
+            xMun:    clean(e.xMunEnv),
+            UF:      clean(e.ufEnv),
+            CEP:     clean(e.cep?.replace(/\D/g, '')),
+            cPais:   '1058',
+            xPais:   'BRASIL',
+        },
+    }
+}
+
+function icmsGroup(imp: any): any {
+    const icms = imp?.ICMS
+    if (!icms) return undefined
+    const key = Object.keys(icms).find(k => k.startsWith('ICMS'))
+    return key ? icms[key] : undefined
 }
 
 function parteFromDest(dest: any) {
@@ -234,6 +331,93 @@ async function saveWithRetry(
     }
 }
 
+// ─── Parceiro helpers ────────────────────────────────────────────────────────
+
+type ParceiroLite = {
+    id: string
+    tipoPessoa: string
+    xNome: string
+    cnpj?: string | null
+    cpf?: string | null
+    ie?: string | null
+    fone?: string | null
+    email?: string | null
+    xLgr?: string | null
+    nro?: string | null
+    xBairro?: string | null
+    cMun?: string | null
+    xMun?: string | null
+    uf?: string | null
+    cep?: string | null
+}
+
+function applyParceiroToForm(prefix: 'rem' | 'dest', p: ParceiroLite, sv: any) {
+    sv(`${prefix}.xNome`,   p.xNome   ?? '')
+    sv(`${prefix}.cnpj`,    p.cnpj    ?? '')
+    sv(`${prefix}.cpf`,     p.cpf     ?? '')
+    sv(`${prefix}.ie`,      p.ie      ?? '')
+    sv(`${prefix}.fone`,    p.fone    ?? '')
+    sv(`${prefix}.email`,   p.email   ?? '')
+    sv(`${prefix}.xLgr`,    p.xLgr    ?? '')
+    sv(`${prefix}.nro`,     p.nro     ?? '')
+    sv(`${prefix}.xBairro`, p.xBairro ?? '')
+    sv(`${prefix}.cMun`,    p.cMun    ?? '')
+    sv(`${prefix}.xMun`,    p.xMun    ?? '')
+    sv(`${prefix}.uf`,      p.uf      ?? '')
+    sv(`${prefix}.cep`,     String(p.cep ?? '').replace(/\D/g, ''))
+}
+
+async function syncParceiroFromForm(id: string, p: ReturnType<typeof emptyParte>): Promise<void> {
+    await fetch(`/api/parceiros/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            xNome:   p.xNome   || null,
+            cnpj:    p.cnpj    || null,
+            cpf:     p.cpf     || null,
+            ie:      p.ie      || null,
+            fone:    p.fone    || null,
+            email:   p.email   || null,
+            xLgr:    p.xLgr    || null,
+            nro:     p.nro     || null,
+            xBairro: p.xBairro || null,
+            cMun:    p.cMun    || null,
+            xMun:    p.xMun    || null,
+            uf:      p.uf      || null,
+            cep:     p.cep     || null,
+        }),
+    })
+}
+
+async function upsertParceiroFromXml(data: any, enderKey: string): Promise<ParceiroLite | null> {
+    const cnpj = String(data?.CNPJ ?? '').replace(/\D/g, '')
+    const cpf  = String(data?.CPF  ?? '').replace(/\D/g, '')
+    if (!cnpj && !cpf) return null
+    const ender = data?.[enderKey] ?? {}
+    const res = await fetch('/api/parceiros', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            tipoPessoa: cnpj ? 'J' : 'F',
+            xNome:   data?.xNome  ?? '',
+            cnpj:    cnpj  || null,
+            cpf:     cpf   || null,
+            ie:      data?.IE    || null,
+            fone:    data?.fone  || null,
+            email:   data?.email || null,
+            xLgr:    ender.xLgr    || null,
+            nro:     ender.nro     || null,
+            xBairro: ender.xBairro || null,
+            cMun:    ender.cMun    || null,
+            xMun:    ender.xMun    || null,
+            uf:      ender.UF      || null,
+            cep:     String(ender.CEP ?? '').replace(/\D/g, '') || null,
+        }),
+    })
+    if (!res.ok) return null
+    return res.json()
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function EmitirCtePage() {
@@ -243,7 +427,11 @@ export default function EmitirCtePage() {
     const [draftId, setDraftId]               = useState<string | null>(null)
     const [nfe, setNfe]                       = useState<any>(null)
     const [status, setStatus]                 = useState<Status>('idle')
+    const [remParceiro, setRemParceiro]       = useState<ParceiroLite | null>(null)
+    const [destParceiro, setDestParceiro]     = useState<ParceiroLite | null>(null)
     const [emittedIdNuvem, setEmittedIdNuvem] = useState<string | null>(null)
+    const [cteInfo, setCteInfo]               = useState<{ status: string; chave?: string | null; dhEmi?: string | null; canceladoEm?: string | null } | null>(null)
+    const isReadOnly = cteInfo?.status === 'autorizado' || cteInfo?.status === 'cancelado'
     const [errMsg, setErrMsg]                 = useState('')
     const [pendingSave, setPendingSave]       = useState<{ draftId: string | null; chave: string | null; idNuvem: string | null; extra: Record<string, unknown>; infCte: unknown } | null>(null)
     const [fetchingDist, setFetchingDist] = useState(false)
@@ -262,11 +450,22 @@ export default function EmitirCtePage() {
         defaultValues: defaultValues(),
     })
 
-    const vTPrestWatch = watch('trib.vTPrest')
-    const pICMSWatch   = watch('trib.pICMS')
-    const vBC   = Number(vTPrestWatch) || 0
-    const pICMS = Number(pICMSWatch)   || 12
-    const vICMS = Math.round(vBC * (pICMS / 100) * 100) / 100
+    const { fields: compFields, append: appendComp, remove: removeComp } = useFieldArray({
+        control,
+        name: 'trib.comp',
+    })
+
+    const tribComp   = watch('trib.comp')
+    const tpIcmsW    = watch('trib.tpIcms')
+    const pICMSWatch = watch('trib.pICMS')
+    const vBCWatch   = watch('trib.vBC')
+
+    const compTotal = (tribComp ?? []).reduce((s: number, c: any) => s + (Number(c.vComp) || 0), 0)
+    const semBC     = ['isento', 'nao_tributado'].includes(tpIcmsW ?? '')
+    const vBC       = semBC ? 0 : (vBCWatch ? Number(vBCWatch) : compTotal)
+    const pICMS     = semBC ? 0 : (Number(pICMSWatch) || 12)
+    const vICMS     = semBC ? 0 : Math.round(vBC * (pICMS / 100) * 100) / 100
+    const cst       = TP_ICMS_MAP[tpIcmsW ?? ''] ?? '00'
 
     // Which tabs have validation errors
     const tabError = {
@@ -301,7 +500,18 @@ export default function EmitirCtePage() {
                 const ic = cte.infCte
                 if (!ic) return
                 reset({
-                    rem:  parteFromCteRem(ic.rem),
+                    dhEmi:   ic.ide?.dhEmi ? String(ic.ide.dhEmi).slice(0, 10) : new Date().toISOString().slice(0, 10),
+                    tpCTe:   String(ic.ide?.tpCTe  ?? '0'),
+                    tpServ:  String(ic.ide?.tpServ  ?? '0'),
+                    modal:   String(ic.ide?.modal   ?? '01'),
+                    cfop:    ic.ide?.CFOP ?? '6352',
+                    ufIni:   ic.ide?.UFIni   ?? '',
+                    xMunIni: ic.ide?.xMunIni ?? '',
+                    cMunIni: ic.ide?.cMunIni ?? '',
+                    ufFim:   ic.ide?.UFFim   ?? '',
+                    xMunFim: ic.ide?.xMunFim ?? '',
+                    cMunFim: ic.ide?.cMunFim ?? '',
+                    rem:     parteFromCteRem(ic.rem),
                     dest: parteFromDest(ic.dest),
                     toma: String(ic.ide?.toma3?.toma ?? ic.ide?.toma4?.toma ?? '3'),
                     carga: {
@@ -311,12 +521,26 @@ export default function EmitirCtePage() {
                         rntrc:   ic.infCTeNorm?.infModal?.rodo?.RNTRC ?? empresa.rntrc ?? '',
                     },
                     trib: {
-                        vTPrest: String(ic.vPrest?.vTPrest ?? ''),
-                        pICMS:   String(ic.imp?.ICMS?.ICMS00?.pICMS ?? '12'),
-                        cst:     String(ic.imp?.ICMS?.ICMS00?.CST ?? '00'),
+                        comp:   [{ xNome: 'Valor do Frete', vComp: String(ic.vPrest?.vTPrest ?? '') }],
+                        tpIcms: cstToTpIcms(String(icmsGroup(ic.imp)?.CST ?? '00')),
+                        vBC:    String(icmsGroup(ic.imp)?.vBC ?? ''),
+                        pICMS:  String(icmsGroup(ic.imp)?.pICMS ?? '12'),
                     },
                     obs: ic.compl?.xObs ?? DEFAULT_OBS,
                 })
+                if (cte.status === 'erro' && cte.erroMsg) {
+                    setStatus('error')
+                    setErrMsg(cte.erroMsg)
+                } else if (cte.status === 'autorizado' || cte.status === 'cancelado') {
+                    setStatus('success')
+                    setCteInfo({
+                        status:      cte.status,
+                        chave:       cte.chave ?? null,
+                        dhEmi:       cte.dhEmi ?? null,
+                        canceladoEm: cte.status === 'cancelado' ? (cte.updatedAt ?? null) : null,
+                    })
+                }
+
                 const chave = ic.infCTeNorm?.infDoc?.infNFe?.[0]?.chave ?? cte.chave ?? ''
                 setNfe({
                     emit: {
@@ -381,8 +605,25 @@ export default function EmitirCtePage() {
                     setValue('dest', parteFromDest(d),  { shouldValidate: false })
                     setValue('carga.peso',   String(pesoLiquido).replace(/\D/g, ''))
                     setValue('carga.vCarga', String(vNF))
+                    setValue('ufIni',   em.enderEmit?.UF   ?? '')
+                    setValue('xMunIni', em.enderEmit?.xMun ?? '')
+                    setValue('cMunIni', em.enderEmit?.cMun ?? '')
+                    setValue('ufFim',   d.enderDest?.UF    ?? '')
+                    setValue('xMunFim', d.enderDest?.xMun  ?? '')
+                    setValue('cMunFim', d.enderDest?.cMun  ?? '')
                     setErrMsg('')
                     setStatus('idle')
+                    // Upsert parceiros em background
+                    ;(async () => {
+                        try {
+                            const [remP, destP] = await Promise.all([
+                                upsertParceiroFromXml(em, 'enderEmit'),
+                                upsertParceiroFromXml(d,  'enderDest'),
+                            ])
+                            if (remP)  setRemParceiro(remP)
+                            if (destP) setDestParceiro(destP)
+                        } catch { /* silent */ }
+                    })()
                 } catch {
                     setErrMsg('Não foi possível ler os dados da NF-e.')
                 }
@@ -411,7 +652,7 @@ export default function EmitirCtePage() {
         const icms = Math.round(base * 0.12)
         const reducao = Math.round(icms * 0.20)
         setCalcResultado({ base, icms, icmsReduzido: icms - reducao })
-        setValue('trib.vTPrest', (base / SCALE).toFixed(2))
+        setValue('trib.comp.0.vComp', (base / SCALE).toFixed(2))
     }
 
     const fetchCalcDistance = async (origem: string, destino: string) => {
@@ -434,17 +675,70 @@ export default function EmitirCtePage() {
     const handleSalvarRascunho = async () => {
         if (!nfe) return
         setStatus('loading')
-        const { obs, carga, trib } = getValues()
+        const data = getValues()
+        if (remParceiro)  syncParceiroFromForm(remParceiro.id,  data.rem).catch(() => {})
+        if (destParceiro) syncParceiroFromForm(destParceiro.id, data.dest).catch(() => {})
+        const { dhEmi, tpCTe, tpServ, modal, cfop, ufIni, xMunIni, cMunIni, ufFim, xMunFim, cMunFim, rem, dest, obs, carga, trib } = data
+        const cfopEntry = CTE_CFOPS.find(c => c.code === cfop) ?? CTE_CFOPS[13]
+        const clean = (v: string | undefined) => (v && v.trim() !== '' ? v : undefined)
+        const nfeEditado = {
+            ...nfe,
+            emit: {
+                ...nfe.emit,
+                xNome: rem.xNome,
+                CNPJ:  clean(rem.cnpj),
+                CPF:   !rem.cnpj ? clean(rem.cpf) : undefined,
+                IE:    clean(rem.ie),
+                email: clean(rem.email),
+                enderEmit: {
+                    xLgr: rem.xLgr, nro: rem.nro, xBairro: rem.xBairro,
+                    cMun: rem.cMun, xMun: rem.xMun, UF: rem.uf,
+                    CEP:  clean(rem.cep), fone: clean(rem.fone),
+                },
+            },
+            dest: {
+                ...nfe.dest,
+                xNome: dest.xNome,
+                CNPJ:  clean(dest.cnpj),
+                CPF:   !dest.cnpj ? clean(dest.cpf) : undefined,
+                IE:    clean(dest.ie),
+                email: clean(dest.email),
+                fone:  clean(dest.fone),
+                enderDest: {
+                    xLgr: dest.xLgr, nro: dest.nro, xBairro: dest.xBairro,
+                    cMun: dest.cMun, xMun: dest.xMun, UF: dest.uf,
+                    CEP:  clean(dest.cep),
+                },
+            },
+            peso: carga.peso,
+        }
         try {
-            const payload = new CtePartesBuilder(nfe)
+            const cfgRes   = await fetch('/api/empresa')
+            const cfgAtual = cfgRes.ok ? await cfgRes.json() : empresa
+            const nCT:  number = cfgAtual.sequenciaCte ?? empresa.sequenciaCte ?? 1
+            const serie: number = cfgAtual.serie       ?? empresa.serie        ?? 99
+
+            const vTPrestRascunho = trib.comp.reduce((s, c) => s + (Number(c.vComp) || 0), 0)
+            const payload = new CtePartesBuilder(nfeEditado)
+                .builIde({
+                    nCT, serie,
+                    CFOP: cfopEntry.code, natOp: cfopEntry.natOp,
+                    dhEmi: dhEmi ? new Date(dhEmi + 'T12:00:00').toISOString() : new Date().toISOString(),
+                    tpCTe: Number(tpCTe),
+                    tpServ: Number(tpServ),
+                    modal,
+                    ...(ufIni && { UFIni: ufIni, xMunIni, cMunIni }),
+                    ...(ufFim && { UFFim: ufFim, xMunFim, cMunFim }),
+                    toma3: { toma: Number(data.toma) as any },
+                })
                 .buildCompl({ xObs: obs })
-                .buildvPrest({ total: vBC, xNome: 'Valor do Frete' })
-                .buildImp({ vBC, pICMS, vICMS })
+                .buildvPrest({ total: vTPrestRascunho, xNome: trib.comp[0]?.xNome ?? 'Valor do Frete' })
+                .buildImp({ vBC, pICMS, vICMS, cst })
                 .buildInfCteNorm({
                     infCarga: { proPred: carga.proPred, vCarga: Number(carga.vCarga) || undefined },
                     infModal: { versaoModal: '4.00', rodo: { RNTRC: carga.rntrc } },
                 })
-                .buildEmitente({ CNPJ: empresa.cnpj || undefined, IE: empresa.ie || undefined })
+                .buildEmitente(emitFromEmpresa(empresa))
                 .buildRemetente()
                 .buildDestinatario()
                 .build()
@@ -472,65 +766,109 @@ export default function EmitirCtePage() {
         }
     }
 
+    // ── Payload builder ───────────────────────────────────────────────────────
+
+    const buildPayload = (data: FormValues, nCT: number, serie: number) => {
+        const { dhEmi, tpCTe, tpServ, modal, cfop, ufIni, xMunIni, cMunIni, ufFim, xMunFim, cMunFim, rem, dest, toma, carga, trib, obs } = data
+        const cfopEntry = CTE_CFOPS.find(c => c.code === cfop) ?? CTE_CFOPS[13]
+        const clean = (v: string | undefined) => (v && v.trim() !== '' ? v : undefined)
+        const nfeEditado = {
+            ...nfe,
+            emit: {
+                ...nfe.emit,
+                xNome: rem.xNome,
+                CNPJ:  clean(rem.cnpj),
+                CPF:   !rem.cnpj ? clean(rem.cpf) : undefined,
+                IE:    clean(rem.ie),
+                email: clean(rem.email),
+                enderEmit: {
+                    xLgr: rem.xLgr, nro: rem.nro, xBairro: rem.xBairro,
+                    cMun: rem.cMun, xMun: rem.xMun, UF: rem.uf,
+                    CEP:  clean(rem.cep), fone: clean(rem.fone),
+                },
+            },
+            dest: {
+                ...nfe.dest,
+                xNome: dest.xNome,
+                CNPJ:  clean(dest.cnpj),
+                CPF:   !dest.cnpj ? clean(dest.cpf) : undefined,
+                IE:    clean(dest.ie),
+                email: clean(dest.email),
+                fone:  clean(dest.fone),
+                enderDest: {
+                    xLgr: dest.xLgr, nro: dest.nro, xBairro: dest.xBairro,
+                    cMun: dest.cMun, xMun: dest.xMun, UF: dest.uf,
+                    CEP:  clean(dest.cep),
+                },
+            },
+            peso: carga.peso,
+        }
+        const vTPrestBuild = trib.comp.reduce((s, c) => s + (Number(c.vComp) || 0), 0)
+        const cstBuild     = TP_ICMS_MAP[trib.tpIcms] ?? '00'
+        const semBCBuild   = ['isento', 'nao_tributado'].includes(trib.tpIcms)
+        const vBCBuild     = semBCBuild ? 0 : (trib.vBC ? Number(trib.vBC) : vTPrestBuild)
+        const pICMSBuild   = semBCBuild ? 0 : (Number(trib.pICMS) || 12)
+        const vICMSBuild   = semBCBuild ? 0 : Math.round(vBCBuild * (pICMSBuild / 100) * 100) / 100
+        return new CtePartesBuilder(nfeEditado)
+            .builIde({
+                nCT, serie,
+                CFOP: cfopEntry.code, natOp: cfopEntry.natOp,
+                dhEmi: dhEmi ? new Date(dhEmi + 'T12:00:00').toISOString() : new Date().toISOString(),
+                tpCTe: Number(tpCTe),
+                tpServ: Number(tpServ),
+                modal,
+                ...(ufIni   && { UFIni: ufIni,   xMunIni, cMunIni }),
+                ...(ufFim   && { UFFim: ufFim,   xMunFim, cMunFim }),
+                toma3: { toma: Number(toma) as any },
+            })
+            .buildCompl({ xObs: obs })
+            .buildvPrest({ total: vTPrestBuild, xNome: trib.comp[0]?.xNome ?? 'Valor do Frete' })
+            .buildImp({ vBC: vBCBuild, pICMS: pICMSBuild, vICMS: vICMSBuild, cst: cstBuild })
+            .buildInfCteNorm({
+                infCarga: { proPred: carga.proPred, vCarga: Number(carga.vCarga) || undefined },
+                infModal: { versaoModal: '4.00', rodo: { RNTRC: carga.rntrc } },
+            })
+            .buildEmitente({ CNPJ: empresa.cnpj || undefined, IE: empresa.ie || undefined })
+            .buildRemetente()
+            .buildDestinatario()
+            .build()
+    }
+
+    // ── Pré-DACTE ─────────────────────────────────────────────────────────────
+
+    const [previewLoading, setPreviewLoading] = useState(false)
+
+    const onPreviewDacte = async (data: FormValues) => {
+        if (!nfe) return
+        setPreviewLoading(true)
+        try {
+            const cfgRes   = await fetch('/api/empresa')
+            const cfgAtual = cfgRes.ok ? await cfgRes.json() : empresa
+            const nCT: number  = cfgAtual.sequenciaCte ?? empresa.sequenciaCte ?? 1
+            const serie: number = cfgAtual.serie       ?? empresa.serie        ?? 99
+            await previewDacte(buildPayload(data, nCT, serie))
+        } catch (e: any) {
+            toast.error('Erro ao gerar pré-DACTE', { description: e?.message })
+        } finally {
+            setPreviewLoading(false)
+        }
+    }
+
     // ── Emit ──────────────────────────────────────────────────────────────────
 
     const onSubmit = async (data: FormValues) => {
         if (!nfe) return
+        if (remParceiro)  syncParceiroFromForm(remParceiro.id,  data.rem).catch(() => {})
+        if (destParceiro) syncParceiroFromForm(destParceiro.id, data.dest).catch(() => {})
         setStatus('loading')
         setErrMsg('')
-        const { rem, dest, toma, carga, trib, obs } = data
         try {
             const cfgRes   = await fetch('/api/empresa')
             const cfgAtual = cfgRes.ok ? await cfgRes.json() : empresa
             const nCT:  number = cfgAtual.sequenciaCte ?? empresa.sequenciaCte ?? 1
             const serie: number = cfgAtual.serie        ?? empresa.serie        ?? 99
 
-            const clean = (v: string | undefined) => (v && v.trim() !== '' ? v : undefined)
-            const nfeEditado = {
-                ...nfe,
-                emit: {
-                    ...nfe.emit,
-                    xNome: rem.xNome,
-                    CNPJ:  clean(rem.cnpj),
-                    CPF:   !rem.cnpj ? clean(rem.cpf) : undefined,
-                    IE:    clean(rem.ie),
-                    email: clean(rem.email),
-                    enderEmit: {
-                        xLgr: rem.xLgr, nro: rem.nro, xBairro: rem.xBairro,
-                        cMun: rem.cMun, xMun: rem.xMun, UF: rem.uf,
-                        CEP:  clean(rem.cep), fone: clean(rem.fone),
-                    },
-                },
-                dest: {
-                    ...nfe.dest,
-                    xNome: dest.xNome,
-                    CNPJ:  clean(dest.cnpj),
-                    CPF:   !dest.cnpj ? clean(dest.cpf) : undefined,
-                    IE:    clean(dest.ie),
-                    email: clean(dest.email),
-                    fone:  clean(dest.fone),
-                    enderDest: {
-                        xLgr: dest.xLgr, nro: dest.nro, xBairro: dest.xBairro,
-                        cMun: dest.cMun, xMun: dest.xMun, UF: dest.uf,
-                        CEP:  clean(dest.cep),
-                    },
-                },
-                peso: carga.peso,
-            }
-
-            const payload = new CtePartesBuilder(nfeEditado)
-                .builIde({ nCT, serie, toma3: { toma: Number(toma) as any } })
-                .buildCompl({ xObs: obs })
-                .buildvPrest({ total: vBC, xNome: 'Valor do Frete' })
-                .buildImp({ vBC, pICMS, vICMS })
-                .buildInfCteNorm({
-                    infCarga: { proPred: carga.proPred, vCarga: Number(carga.vCarga) || undefined },
-                    infModal: { versaoModal: '4.00', rodo: { RNTRC: carga.rntrc } },
-                })
-                .buildEmitente({ CNPJ: empresa.cnpj || undefined, IE: empresa.ie || undefined })
-                .buildRemetente()
-                .buildDestinatario()
-                .build()
+            const payload = buildPayload(data, nCT, serie)
 
             const result = await emitirCte(payload)
 
@@ -584,7 +922,7 @@ export default function EmitirCtePage() {
             }
         } catch (e: any) {
             const apiErr = e?.response?.data
-            const msg = apiErr?.details?.error?.message ?? apiErr?.error ?? e?.message ?? 'Erro ao emitir CT-e.'
+            const msg = apiErr?.details?.message ?? apiErr?.details?.error?.message ?? apiErr?.error ?? e?.message ?? 'Erro ao emitir CT-e.'
             setStatus('error')
             setErrMsg(msg)
             toast.error('Falha ao emitir CT-e', { description: msg, duration: 10000 })
@@ -598,97 +936,209 @@ export default function EmitirCtePage() {
         }
     }
 
-    const tomaWatch = watch('toma')
-    const remWatch  = watch('rem')
-    const destWatch = watch('dest')
+    const tomaWatch  = watch('toma')
+    const remWatch   = watch('rem')
+    const destWatch  = watch('dest')
+    const ufIniWatch = watch('ufIni')
+    const ufFimWatch = watch('ufFim')
+    const xMunIniWatch = watch('xMunIni')
+    const xMunFimWatch = watch('xMunFim')
 
     // ─────────────────────────────────────────────────────────────────────────
 
     return (
         <main className="min-h-screen bg-slate-50 text-slate-900">
-            <header className="sticky top-0 z-10 bg-white border-b shadow-sm">
-                <div className="max-w-4xl mx-auto px-6 h-14 flex items-center gap-3">
-                    <Link href="/" className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">F</div>
-                        <span className="font-semibold text-slate-800">FreteCalc</span>
-                    </Link>
-                    <span className="text-slate-300">/</span>
-                    <span className="text-sm text-slate-500">Emitir CT-e</span>
-                </div>
-            </header>
 
-            <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
-                <div>
-                    <h1 className="text-2xl font-semibold">Emitir CT-e</h1>
-                    <p className="text-sm text-slate-500 mt-1">Preencha os dados para emissão do Conhecimento de Transporte Eletrônico.</p>
+            <div className="max-w-[1400px] mx-auto px-6 py-6">
+                <div className="mb-5">
+                    <h1 className="text-xl font-semibold">Emitir CT-e</h1>
+                    <p className="text-sm text-slate-500 mt-0.5">Preencha os dados para emissão do Conhecimento de Transporte Eletrônico.</p>
                 </div>
 
-                {/* Upload XML */}
-                <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                    <div className="p-5 flex flex-col sm:flex-row sm:items-center gap-4">
-                        <div className="flex-1">
-                            <Label htmlFor="xml" className="font-medium">XML da NF-e</Label>
-                            <Input type="file" accept=".xml" onChange={readXml} id="xml" className="mt-1" />
+                {status === 'error' && errMsg && (
+                    <div className="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700 mb-5">
+                        <b>Rejeição SEFAZ:</b> {errMsg}
+                    </div>
+                )}
+
+                {cteInfo?.status === 'autorizado' && (
+                    <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 mb-5">
+                        <div className="flex items-start gap-3">
+                            <svg className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <div className="min-w-0">
+                                <p className="text-sm font-semibold text-emerald-800">CT-e Autorizado — somente leitura</p>
+                                {cteInfo.chave && (
+                                    <p className="text-xs text-emerald-700 mt-1 font-mono break-all">Chave: {cteInfo.chave}</p>
+                                )}
+                                {cteInfo.dhEmi && (
+                                    <p className="text-xs text-emerald-600 mt-0.5">
+                                        Emitido em: {new Date(cteInfo.dhEmi).toLocaleString('pt-BR')}
+                                    </p>
+                                )}
+                            </div>
                         </div>
-                        {!nfe && (
-                            <p className="text-xs text-slate-400 hidden sm:block">
-                                Faça upload do XML autorizado pela SEFAZ para preencher os dados automaticamente.
-                            </p>
-                        )}
+                    </div>
+                )}
+
+                {cteInfo?.status === 'cancelado' && (
+                    <div className="rounded-xl bg-rose-50 border border-rose-200 p-4 mb-5">
+                        <div className="flex items-start gap-3">
+                            <svg className="w-5 h-5 text-rose-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <div className="min-w-0">
+                                <p className="text-sm font-semibold text-rose-800">CT-e Cancelado — somente leitura</p>
+                                {cteInfo.chave && (
+                                    <p className="text-xs text-rose-700 mt-1 font-mono break-all">Chave: {cteInfo.chave}</p>
+                                )}
+                                {cteInfo.canceladoEm && (
+                                    <p className="text-xs text-rose-600 mt-0.5">
+                                        Cancelado em: {new Date(cteInfo.canceladoEm).toLocaleString('pt-BR')}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ── Barra de campos do cabeçalho ── */}
+                <div className="bg-white rounded-2xl border shadow-sm p-4 mb-5 space-y-3">
+                    {/* Linha 1: Data | Tipo CT-e | Tipo Serviço | Modal | CFOP */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 items-end">
+                        <div>
+                            <Label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Data</Label>
+                            <Controller name="dhEmi" control={control} render={({ field }) => (
+                                <Input type="date" value={field.value} onChange={e => field.onChange(e.target.value)} className="mt-1" />
+                            )} />
+                        </div>
+                        <div>
+                            <Label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Tipo CT-e</Label>
+                            <Controller name="tpCTe" control={control} render={({ field }) => (
+                                <Select value={field.value} onValueChange={field.onChange}>
+                                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="0">0 — Normal</SelectItem>
+                                        <SelectItem value="1">1 — Complementar</SelectItem>
+                                        <SelectItem value="2">2 — Anulação</SelectItem>
+                                        <SelectItem value="3">3 — Substituto</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            )} />
+                        </div>
+                        <div>
+                            <Label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Tipo de Serviço</Label>
+                            <Controller name="tpServ" control={control} render={({ field }) => (
+                                <Select value={field.value} onValueChange={field.onChange}>
+                                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="0">0 — Normal</SelectItem>
+                                        <SelectItem value="1">1 — Subcontratação</SelectItem>
+                                        <SelectItem value="2">2 — Redespacho</SelectItem>
+                                        <SelectItem value="3">3 — Red. Intermediário</SelectItem>
+                                        <SelectItem value="4">4 — Multimodal</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            )} />
+                        </div>
+                        <div>
+                            <Label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Modal CT-e</Label>
+                            <Controller name="modal" control={control} render={({ field }) => (
+                                <Select value={field.value} onValueChange={field.onChange}>
+                                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="01">01 — Rodoviário</SelectItem>
+                                        <SelectItem value="02">02 — Aéreo</SelectItem>
+                                        <SelectItem value="03">03 — Aquaviário</SelectItem>
+                                        <SelectItem value="04">04 — Ferroviário</SelectItem>
+                                        <SelectItem value="05">05 — Dutoviário</SelectItem>
+                                        <SelectItem value="06">06 — Multimodal</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            )} />
+                        </div>
+                        <div className="sm:col-span-2 lg:col-span-1">
+                            <Label className="text-xs font-medium text-slate-500 uppercase tracking-wide">CFOP</Label>
+                            <Controller name="cfop" control={control} render={({ field }) => (
+                                <Select value={field.value} onValueChange={field.onChange}>
+                                    <SelectTrigger className="mt-1"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                                    <SelectContent>
+                                        {CTE_CFOPS.map(c => (
+                                            <SelectItem key={c.code} value={c.code}>
+                                                <span className="font-mono font-semibold mr-2">{c.code}</span>
+                                                <span className="text-slate-600">{c.natOp}</span>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            )} />
+                        </div>
                     </div>
 
-                    {nfe && (() => {
-                        const raw = nfe.raw
-                        const chave =
-                            raw?.nfeProc?.protNFe?.infProt?.chNFe ??
-                            raw?.protNFe?.infProt?.chNFe ??
-                            (() => {
-                                const id = raw?.nfeProc?.NFe?.infNFe?.$?.Id ?? raw?.NFe?.infNFe?.$?.Id
-                                return typeof id === 'string' && id.startsWith('NFe') ? id.slice(3) : null
-                            })()
-                        return (
-                            <div className="border-t border-slate-100 bg-sky-50/60 px-5 py-3 flex flex-wrap gap-x-6 gap-y-1.5 items-center">
-                                <div className="flex items-center gap-1.5">
-                                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-500 shrink-0">
-                                        <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
-                                    </span>
-                                    <span className="text-xs font-semibold text-slate-700">
-                                        NF-e {nfe.ide?.nNF}{nfe.ide?.serie ? `/${nfe.ide.serie}` : ''}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                    <span className="text-xs text-slate-400 shrink-0">Emitente</span>
-                                    <span className="text-xs font-medium text-slate-700 truncate max-w-[200px]" title={nfe.emit?.xNome}>
-                                        {nfe.emit?.xNome ?? '—'}
-                                    </span>
-                                </div>
-                                {chave && (
-                                    <div className="flex items-center gap-1.5 min-w-0">
-                                        <span className="text-xs text-slate-400 shrink-0">Chave</span>
-                                        <span className="font-mono text-xs text-slate-600 truncate max-w-[260px]" title={chave}>
-                                            {chave.slice(0,8)}…{chave.slice(-8)}
-                                        </span>
-                                        <button type="button" onClick={() => navigator.clipboard.writeText(chave)}
-                                            title="Copiar chave" className="ml-0.5 text-slate-400 hover:text-sky-600 transition-colors shrink-0">
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                                <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                                            </svg>
-                                        </button>
-                                    </div>
-                                )}
-                                <div className="flex items-center gap-1 text-xs text-slate-500 ml-auto">
-                                    <span>{nfe.emit?.enderEmit?.xMun}/{nfe.emit?.enderEmit?.UF}</span>
-                                    <span className="text-slate-300">→</span>
-                                    <span>{nfe.dest?.enderDest?.xMun}/{nfe.dest?.enderDest?.UF}</span>
-                                </div>
-                            </div>
-                        )
-                    })()}
+                    {/* Linha 2: Origem → Destino */}
+                    <div className="border-t pt-3 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-3 items-end">
+                        <div>
+                            <Label className="text-xs font-medium text-slate-500 uppercase tracking-wide">UF Origem</Label>
+                            <Controller name="ufIni" control={control} render={({ field }) => (
+                                <Select value={field.value} onValueChange={v => {
+                                    field.onChange(v)
+                                    setValue('xMunIni', '')
+                                    setValue('cMunIni', '')
+                                }}>
+                                    <SelectTrigger className="mt-1"><SelectValue placeholder="UF" /></SelectTrigger>
+                                    <SelectContent>
+                                        {UF_LIST.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            )} />
+                        </div>
+                        <div className="sm:col-span-2 lg:col-span-3">
+                            <Label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Cidade Origem</Label>
+                            <MunicipioPicker
+                                uf={ufIniWatch}
+                                value={xMunIniWatch}
+                                onChange={(xMun, cMun) => {
+                                    setValue('xMunIni', xMun)
+                                    setValue('cMunIni', cMun)
+                                }}
+                                placeholder="Selecione a cidade..."
+                            />
+                        </div>
+                        <div className="items-end justify-center pb-2 text-slate-300 hidden lg:flex">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+                        </div>
+                        <div>
+                            <Label className="text-xs font-medium text-slate-500 uppercase tracking-wide">UF Destino</Label>
+                            <Controller name="ufFim" control={control} render={({ field }) => (
+                                <Select value={field.value} onValueChange={v => {
+                                    field.onChange(v)
+                                    setValue('xMunFim', '')
+                                    setValue('cMunFim', '')
+                                }}>
+                                    <SelectTrigger className="mt-1"><SelectValue placeholder="UF" /></SelectTrigger>
+                                    <SelectContent>
+                                        {UF_LIST.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            )} />
+                        </div>
+                        <div className="sm:col-span-2 lg:col-span-3">
+                            <Label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Cidade Destino</Label>
+                            <MunicipioPicker
+                                uf={ufFimWatch}
+                                value={xMunFimWatch}
+                                onChange={(xMun, cMun) => {
+                                    setValue('xMunFim', xMun)
+                                    setValue('cMunFim', cMun)
+                                }}
+                                placeholder="Selecione a cidade..."
+                            />
+                        </div>
+                    </div>
                 </div>
 
+                <div className={`pb-24${isReadOnly ? ' pointer-events-none select-none opacity-60' : ''}`}>
+                    <div className="space-y-4">
                 {/* Tabs */}
                 <Tabs defaultValue="remetente">
-                    <TabsList className="flex-wrap h-auto gap-1">
+                    <TabsList className={`flex-wrap h-auto gap-1${isReadOnly ? ' pointer-events-auto opacity-100' : ''}`}>
                         <TabsTrigger value="remetente" className="relative">
                             Remetente {tabError.remetente && <ErrorDot />}
                         </TabsTrigger>
@@ -709,42 +1159,48 @@ export default function EmitirCtePage() {
                     {/* ── Remetente ── */}
                     <TabsContent value="remetente">
                         <Card title="Remetente">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="md:col-span-2">
+                            <ParceiroPickerCte
+                                value={remParceiro}
+                                onSelect={p => { setRemParceiro(p); applyParceiroToForm('rem', p, setValue) }}
+                                onClear={() => setRemParceiro(null)}
+                            />
+                            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <div className="sm:col-span-2 lg:col-span-3">
                                     <CF name="rem.xNome" control={control} label="Razão Social / Nome" />
                                 </div>
-                                <CF name="rem.cnpj" control={control} label="CNPJ" mono
-                                    mask={maskCnpj} strip={/\D/g} />
-                                <CF name="rem.cpf" control={control} label="CPF" mono
-                                    mask={maskCpf} strip={/\D/g} placeholder="Apenas se pessoa física" />
-                                <CF name="rem.ie"    control={control} label="Inscrição Estadual" />
-                                <CF name="rem.fone"  control={control} label="Telefone" mono mask={maskFone} strip={/\D/g} />
-                                <div className="md:col-span-2">
+                                <DocInputField prefix="rem" control={control} setValue={setValue}
+                                    onParceiroFound={p => setRemParceiro(p)} />
+                                <CF name="rem.ie"   control={control} label="Inscrição Estadual" />
+                                <CF name="rem.fone" control={control} label="Telefone" mono mask={maskFone} strip={/\D/g} />
+                                <div className="sm:col-span-2">
                                     <CF name="rem.email" control={control} label="E-mail" />
                                 </div>
                             </div>
-                            <AddressSection prefix="rem" control={control} />
+                            <AddressSection prefix="rem" control={control} setValue={setValue} watch={watch} />
                         </Card>
                     </TabsContent>
 
                     {/* ── Destinatário ── */}
                     <TabsContent value="destinatario">
                         <Card title="Destinatário">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="md:col-span-2">
+                            <ParceiroPickerCte
+                                value={destParceiro}
+                                onSelect={p => { setDestParceiro(p); applyParceiroToForm('dest', p, setValue) }}
+                                onClear={() => setDestParceiro(null)}
+                            />
+                            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <div className="sm:col-span-2 lg:col-span-3">
                                     <CF name="dest.xNome" control={control} label="Razão Social / Nome" />
                                 </div>
-                                <CF name="dest.cnpj" control={control} label="CNPJ" mono
-                                    mask={maskCnpj} strip={/\D/g} />
-                                <CF name="dest.cpf" control={control} label="CPF" mono
-                                    mask={maskCpf} strip={/\D/g} placeholder="Apenas se pessoa física" />
+                                <DocInputField prefix="dest" control={control} setValue={setValue}
+                                    onParceiroFound={p => setDestParceiro(p)} />
                                 <CF name="dest.ie"   control={control} label="Inscrição Estadual" />
                                 <CF name="dest.fone" control={control} label="Telefone" mono mask={maskFone} strip={/\D/g} />
-                                <div className="md:col-span-2">
+                                <div className="sm:col-span-2">
                                     <CF name="dest.email" control={control} label="E-mail" />
                                 </div>
                             </div>
-                            <AddressSection prefix="dest" control={control} />
+                            <AddressSection prefix="dest" control={control} setValue={setValue} watch={watch} />
                         </Card>
                     </TabsContent>
 
@@ -793,16 +1249,18 @@ export default function EmitirCtePage() {
                     {/* ── Dados da Carga ── */}
                     <TabsContent value="carga">
                         <Card title="Dados da Carga">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <CF name="carga.proPred" control={control} label="Produto predominante"
-                                    placeholder="Ex: MADEIRA" transform={v => v.toUpperCase()} />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="lg:col-span-2">
+                                    <CF name="carga.proPred" control={control} label="Produto predominante"
+                                        placeholder="Ex: MADEIRA" transform={v => v.toUpperCase()} />
+                                </div>
                                 <CF name="carga.peso" control={control} label="Peso líquido (kg)"
                                     placeholder="Ex: 18000" strip={/\D/g} />
+                                <CF name="carga.rntrc" control={control} label="RNTRC" placeholder="00000000" mono transform={maskRntrc} />
                                 <Controller name="carga.vCarga" control={control} render={({ field, fieldState }) => (
                                     <CurrencyInput label="Valor da carga" value={field.value} onChange={field.onChange}
                                         error={fieldState.error?.message} />
                                 )} />
-                                <CF name="carga.rntrc" control={control} label="RNTRC" placeholder="00000000" mono transform={maskRntrc} />
                             </div>
                         </Card>
                     </TabsContent>
@@ -810,39 +1268,148 @@ export default function EmitirCtePage() {
                     {/* ── Tributação / Despesas ── */}
                     <TabsContent value="tributacao">
                         <Card title="Tributação / Despesas">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <Label htmlFor="vTPrest">Valor do Frete</Label>
-                                    <div className="flex gap-2 mt-1">
-                                        <Controller name="trib.vTPrest" control={control} render={({ field, fieldState }) => (
-                                            <CurrencyInput id="vTPrest" value={field.value} onChange={field.onChange}
-                                                error={fieldState.error?.message} className="flex-1" />
-                                        )} />
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
+
+                                {/* ── Coluna esquerda: Despesas ── */}
+                                <div className="pb-6 lg:pb-0 lg:pr-6 space-y-2">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Despesas de Transporte</p>
                                         <Button type="button" variant={calc.show ? 'default' : 'outline'} size="sm"
-                                            className="whitespace-nowrap shrink-0" onClick={() => setCalcF('show', !calc.show)}>
-                                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                            className="h-7 text-xs gap-1.5 shrink-0" onClick={() => setCalcF('show', !calc.show)}>
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 7H6a2 2 0 00-2 2v9a2 2 0 002 2h9a2 2 0 002-2v-3M13 3h5m0 0v5m0-5L10 11" />
                                             </svg>
                                             Calculadora
                                         </Button>
                                     </div>
+
+                                    {/* Header das colunas */}
+                                    <div className="grid grid-cols-[1fr_140px_28px] gap-2 px-1">
+                                        <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">Descrição</span>
+                                        <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">Valor</span>
+                                        <span />
+                                    </div>
+
+                                    {compFields.map((field, index) => (
+                                        <div key={field.id} className="grid grid-cols-[1fr_140px_28px] gap-2 items-start">
+                                            <Controller
+                                                name={`trib.comp.${index}.xNome`}
+                                                control={control}
+                                                render={({ field: f, fieldState }) => (
+                                                    <Input
+                                                        value={f.value}
+                                                        onChange={e => f.onChange(e.target.value)}
+                                                        placeholder="Ex: Valor do Frete"
+                                                        className={fieldState.error ? 'border-red-500' : ''}
+                                                    />
+                                                )}
+                                            />
+                                            <Controller
+                                                name={`trib.comp.${index}.vComp`}
+                                                control={control}
+                                                render={({ field: f }) => (
+                                                    <CurrencyInput value={f.value} onChange={f.onChange} />
+                                                )}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => removeComp(index)}
+                                                disabled={compFields.length === 1}
+                                                className="mt-0.5 h-9 w-7 flex items-center justify-center rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-0 disabled:pointer-events-none"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    ))}
+
+                                    <button
+                                        type="button"
+                                        onClick={() => appendComp({ xNome: '', vComp: '' })}
+                                        className="mt-1 text-xs text-sky-600 hover:text-sky-800 font-medium flex items-center gap-1"
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/>
+                                        </svg>
+                                        Adicionar despesa
+                                    </button>
+
+                                    <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
+                                        <span className="text-xs text-slate-400">Total das despesas</span>
+                                        <span className="text-sm font-semibold text-slate-800">
+                                            {compTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                        </span>
+                                    </div>
+                                    {(errors.trib as any)?.comp && (
+                                        <p className="text-xs text-red-500">{(errors.trib as any).comp.message ?? (errors.trib as any).comp.root?.message}</p>
+                                    )}
                                 </div>
-                                <CF name="trib.pICMS" control={control} label="Alíquota ICMS (%)" placeholder="12" />
-                                <div>
-                                    <Label htmlFor="cst">CST</Label>
-                                    <Controller name="trib.cst" control={control} render={({ field }) => (
-                                        <Select value={field.value} onValueChange={field.onChange}>
-                                            <SelectTrigger id="cst" className="w-full mt-1"><SelectValue /></SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="00">00 — Tributação Normal</SelectItem>
-                                                <SelectItem value="20">20 — Com Redução de BC</SelectItem>
-                                                <SelectItem value="40">40 — Isento</SelectItem>
-                                                <SelectItem value="41">41 — Não Tributado</SelectItem>
-                                                <SelectItem value="60">60 — ICMS cobrado anteriormente</SelectItem>
-                                                <SelectItem value="90">90 — Outros</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    )} />
+
+                                {/* ── Coluna direita: Tributação ── */}
+                                <div className="pt-6 lg:pt-0 lg:pl-6 space-y-4">
+                                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Tributação</p>
+
+                                    <div>
+                                        <Label>Tipo de Tributação</Label>
+                                        <Controller name="trib.tpIcms" control={control} render={({ field }) => (
+                                            <Select value={field.value} onValueChange={field.onChange}>
+                                                <SelectTrigger className="mt-1 w-full"><SelectValue /></SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="normal">Normal</SelectItem>
+                                                    <SelectItem value="isento">Isento</SelectItem>
+                                                    <SelectItem value="nao_tributado">Não Tributado</SelectItem>
+                                                    <SelectItem value="outra_uf">Outra UF</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        )} />
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <div>
+                                            <Label>Valor BC ICMS</Label>
+                                            {semBC ? (
+                                                <div className="mt-1 h-9 flex items-center px-3 rounded-md border border-slate-200 bg-slate-50 text-sm font-mono text-slate-400">
+                                                    R$ 0,00
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <Controller name="trib.vBC" control={control} render={({ field }) => (
+                                                        <CurrencyInput
+                                                            value={field.value}
+                                                            onChange={field.onChange}
+                                                            placeholder={compTotal > 0 ? compTotal.toFixed(2) : '0,00'}
+                                                        />
+                                                    )} />
+                                                    {!vBCWatch && compTotal > 0 && (
+                                                        <p className="text-[11px] text-slate-400 mt-1">Preenchido automaticamente com o total das despesas</p>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <Label>Alíquota ICMS (%)</Label>
+                                            {semBC ? (
+                                                <div className="mt-1 h-9 flex items-center px-3 rounded-md border border-slate-200 bg-slate-50 text-sm font-mono text-slate-400">
+                                                    0%
+                                                </div>
+                                            ) : (
+                                                <Controller name="trib.pICMS" control={control} render={({ field }) => (
+                                                    <Input value={field.value} onChange={e => field.onChange(e.target.value)}
+                                                        placeholder="12" className="mt-1" />
+                                                )} />
+                                            )}
+                                        </div>
+                                        <div>
+                                            <Label>Valor ICMS</Label>
+                                            <div className={`mt-1 h-9 flex items-center px-3 rounded-md border border-slate-200 bg-slate-50 text-sm font-mono ${semBC ? 'text-slate-400' : 'text-slate-700'}`}>
+                                                {vICMS.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                            </div>
+                                            {!semBC && (
+                                                <p className="text-[11px] text-slate-400 mt-1">Calculado: {vBC.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} × {pICMS}%</p>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -945,13 +1512,6 @@ export default function EmitirCtePage() {
                                 </div>
                             )}
 
-                            {vBC > 0 && (
-                                <div className="mt-4 rounded-xl bg-slate-50 border p-4 text-sm text-slate-600 space-y-1">
-                                    <p className="font-semibold text-slate-700 mb-1">Resumo</p>
-                                    <p>Valor do frete: <b>R$ {vBC.toFixed(2)}</b></p>
-                                    <p>ICMS ({pICMS}%): <b>R$ {vICMS.toFixed(2)}</b></p>
-                                </div>
-                            )}
                         </Card>
                     </TabsContent>
 
@@ -971,23 +1531,24 @@ export default function EmitirCtePage() {
 
                     {/* ── Dados da NF-e ── */}
                     <TabsContent value="nfe">
-                        <Card title="Dados da NF-e Referenciada">
-                            {!nfe ? (
-                                <p className="text-sm text-slate-400 py-4 text-center">
-                                    Nenhum XML carregado. Faça o upload de uma NF-e para ver os dados.
-                                </p>
+                        <Card title="NF-e Referenciada">
+                            <div>
+                                <Label htmlFor="xml" className="font-medium text-sm">Importar XML da NF-e</Label>
+                                <p className="text-xs text-slate-400 mt-0.5 mb-2">Faça upload do XML autorizado pela SEFAZ. Os dados de remetente, destinatário, peso e valor serão preenchidos automaticamente.</p>
+                                <Input type="file" accept=".xml" onChange={readXml} id="xml" className="max-w-sm" />
+                            </div>
+                            {nfe ? (
+                                <div className="mt-4 pt-4 border-t">
+                                    <NfeDataPanel nfe={nfe} />
+                                </div>
                             ) : (
-                                <NfeDataPanel nfe={nfe} />
+                                <p className="text-sm text-slate-400 py-6 text-center border-t mt-4">
+                                    Nenhum XML carregado ainda.
+                                </p>
                             )}
                         </Card>
                     </TabsContent>
                 </Tabs>
-
-                {status === 'error' && errMsg && (
-                    <div className="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700">
-                        <b>Rejeição SEFAZ:</b> {errMsg}
-                    </div>
-                )}
 
                 {pendingSave && (
                     <div className="rounded-xl bg-amber-50 border border-amber-300 p-4 space-y-3">
@@ -1033,33 +1594,76 @@ export default function EmitirCtePage() {
                         </div>
                     </div>
                 )}
-
-                <div className="flex gap-3 pb-8 flex-wrap">
-                    {status !== 'success' && (
-                        <Button onClick={handleSubmit(onSubmit)} disabled={!nfe || status === 'loading'} className="gap-2">
-                            {status === 'loading' && (
-                                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                            )}
-                            {status === 'loading' ? 'Emitindo...' : 'Emitir CT-e'}
-                        </Button>
-                    )}
-                    {status === 'success' && emittedIdNuvem && (
-                        <Button
-                            onClick={async () => {
-                                try { await imprimirCte(emittedIdNuvem) }
-                                catch (e: any) { toast.error(e?.message || 'Erro ao imprimir CT-e') }
-                            }}
-                            className="gap-2 bg-emerald-600 hover:bg-emerald-700"
-                        >
-                            Imprimir DACTE
-                        </Button>
-                    )}
-                    <Button variant="outline" onClick={handleSalvarRascunho} disabled={!nfe || status === 'loading' || status === 'success'}>
-                        Salvar rascunho
-                    </Button>
-                    <Link href="/"><Button variant="ghost">Cancelar</Button></Link>
-                </div>
+                    </div>{/* fim area principal */}
+                </div>{/* fim pb-24 */}
             </div>
+
+            {/* ── Footer sticky ── */}
+            <footer className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t shadow-lg">
+                <div className="max-w-[1400px] mx-auto px-6 h-16 flex items-center gap-3">
+                    {vBC > 0 && (
+                        <div className="text-sm text-slate-600 mr-4 hidden sm:block">
+                            <span className="text-slate-400 mr-1">Frete:</span>
+                            <b className="text-slate-800">R$ {vBC.toFixed(2)}</b>
+                            <span className="text-slate-300 mx-2">·</span>
+                            <span className="text-slate-400 mr-1">ICMS {pICMS}%:</span>
+                            <b className="text-slate-800">R$ {vICMS.toFixed(2)}</b>
+                        </div>
+                    )}
+
+                    <div className="flex items-center gap-2 ml-auto">
+                        <Link href="/cte"><Button variant="ghost" size="sm">Voltar</Button></Link>
+                        {isReadOnly ? (
+                            draftId && (
+                                <Button size="sm"
+                                    onClick={async () => {
+                                        try { await imprimirCte(draftId) }
+                                        catch (e: any) { toast.error(e?.message || 'Erro ao gerar DACTE') }
+                                    }}
+                                    className="gap-1.5 bg-emerald-600 hover:bg-emerald-700">
+                                    Imprimir DACTE
+                                </Button>
+                            )
+                        ) : (
+                            <>
+                                <Button variant="outline" size="sm" onClick={handleSalvarRascunho}
+                                    disabled={!nfe || status === 'loading' || status === 'success'}>
+                                    Salvar rascunho
+                                </Button>
+                                <Button variant="outline" size="sm"
+                                    onClick={handleSubmit(onPreviewDacte)}
+                                    disabled={!nfe || status === 'loading' || previewLoading}
+                                    className="gap-1.5">
+                                    {previewLoading && (
+                                        <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-400/40 border-t-slate-500" />
+                                    )}
+                                    Pré-DACTE
+                                </Button>
+                                {status === 'success' && draftId ? (
+                                    <Button size="sm"
+                                        onClick={async () => {
+                                            try { await imprimirCte(draftId) }
+                                            catch (e: any) { toast.error(e?.message || 'Erro ao gerar DACTE') }
+                                        }}
+                                        className="gap-1.5 bg-emerald-600 hover:bg-emerald-700">
+                                        Imprimir DACTE
+                                    </Button>
+                                ) : (
+                                    <Button size="sm"
+                                        onClick={handleSubmit(onSubmit)}
+                                        disabled={!nfe || status === 'loading'}
+                                        className="gap-1.5">
+                                        {status === 'loading' && (
+                                            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                                        )}
+                                        {status === 'loading' ? 'Emitindo...' : 'Emitir CT-e'}
+                                    </Button>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </div>
+            </footer>
         </main>
     )
 }
@@ -1075,6 +1679,353 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
         <div className="bg-white rounded-2xl border p-6 shadow-sm space-y-4 mt-2">
             <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">{title}</h2>
             {children}
+        </div>
+    )
+}
+
+// ─── Parceiro Picker ──────────────────────────────────────────────────────────
+
+function ParceiroPickerCte({ value, onSelect, onClear }: {
+    value: ParceiroLite | null
+    onSelect: (p: ParceiroLite) => void
+    onClear: () => void
+}) {
+    const [query, setQuery]     = useState('')
+    const [results, setResults] = useState<ParceiroLite[]>([])
+    const [loading, setLoading] = useState(false)
+    const [open, setOpen]       = useState(false)
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const ref         = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+        }
+        document.addEventListener('mousedown', handler)
+        return () => document.removeEventListener('mousedown', handler)
+    }, [])
+
+    useEffect(() => {
+        const q = query.trim()
+        if (q.length < 2) { setResults([]); setOpen(false); return }
+        if (debounceRef.current) clearTimeout(debounceRef.current)
+        debounceRef.current = setTimeout(async () => {
+            setLoading(true)
+            try {
+                const digits = q.replace(/\D/g, '')
+                const param  = digits.length === 14 ? `cnpj=${digits}`
+                             : digits.length === 11 ? `cpf=${digits}`
+                             : `q=${encodeURIComponent(q)}`
+                const res = await fetch(`/api/parceiros?${param}`)
+                if (res.ok) { setResults(await res.json()); setOpen(true) }
+            } finally { setLoading(false) }
+        }, 300)
+    }, [query])
+
+    function fmtDoc(p: ParceiroLite) {
+        if (p.cnpj) return maskCnpj(p.cnpj)
+        if (p.cpf)  return maskCpf(p.cpf)
+        return '—'
+    }
+
+    if (value) {
+        return (
+            <div className="rounded-xl border border-sky-200 bg-sky-50/60 px-4 py-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 truncate">{value.xNome}</p>
+                    <div className="flex items-center gap-3 mt-0.5">
+                        <span className="text-xs font-mono text-slate-500">{fmtDoc(value)}</span>
+                        {value.xMun && <span className="text-xs text-slate-400">{value.xMun} / {value.uf}</span>}
+                    </div>
+                </div>
+                <button type="button" onClick={onClear}
+                    className="text-xs text-sky-600 hover:text-sky-800 font-medium shrink-0 border border-sky-200 rounded-lg px-2.5 py-1 hover:bg-sky-100 transition-colors">
+                    Trocar
+                </button>
+            </div>
+        )
+    }
+
+    return (
+        <div ref={ref} className="relative">
+            <div className="relative">
+                <input
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                    onFocus={() => results.length > 0 && setOpen(true)}
+                    placeholder="Buscar por nome, CNPJ ou CPF..."
+                    className="w-full h-9 px-3 pr-8 text-sm border rounded-md border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                />
+                {loading
+                    ? <span className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-slate-500" />
+                    : <svg className="absolute right-2.5 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35"/>
+                      </svg>
+                }
+            </div>
+            {open && (
+                <div className="absolute z-50 top-full mt-1 w-full bg-white border rounded-lg shadow-xl max-h-56 overflow-y-auto">
+                    {results.length === 0
+                        ? <p className="text-sm text-slate-400 text-center py-4">Nenhum cadastro encontrado</p>
+                        : results.map(p => (
+                            <button key={p.id} type="button"
+                                onClick={() => { onSelect(p); setQuery(''); setOpen(false) }}
+                                className="w-full text-left px-3 py-2.5 hover:bg-sky-50 transition-colors border-b last:border-0">
+                                <p className="text-sm font-medium text-slate-800">{p.xNome}</p>
+                                <p className="text-xs text-slate-400 font-mono">
+                                    {fmtDoc(p)}{p.xMun ? ` · ${p.xMun}/${p.uf}` : ''}
+                                </p>
+                            </button>
+                        ))
+                    }
+                </div>
+            )}
+        </div>
+    )
+}
+
+// ─── Doc Input (CNPJ/CPF unificado + lookup Receita Federal) ─────────────────
+
+function normalizeStr(s: string) {
+    return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+}
+
+function DocInputField({ prefix, control, setValue, onParceiroFound }: {
+    prefix: 'rem' | 'dest'
+    control: any
+    setValue: any
+    onParceiroFound?: (p: ParceiroLite) => void
+}) {
+    const [looking, setLooking] = useState(false)
+    const [lookupErr, setLookupErr] = useState('')
+    const lastLookup = useRef('')
+
+    async function lookupCnpj(cnpj: string) {
+        if (cnpj === lastLookup.current) return
+        lastLookup.current = cnpj
+        setLooking(true)
+        setLookupErr('')
+        try {
+            const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`)
+            if (!res.ok) { setLookupErr('CNPJ não encontrado na Receita Federal'); return }
+            const data = await res.json()
+
+            setValue(`${prefix}.xNome`,   data.razao_social ?? '')
+            setValue(`${prefix}.fone`,    String(data.ddd_telefone_1 ?? '').replace(/\D/g, ''))
+            setValue(`${prefix}.email`,   data.email ?? '')
+            setValue(`${prefix}.xLgr`,   data.logradouro ?? '')
+            setValue(`${prefix}.nro`,     data.numero ?? '')
+            setValue(`${prefix}.xBairro`, data.bairro ?? '')
+            setValue(`${prefix}.cep`,     String(data.cep ?? '').replace(/\D/g, ''))
+            setValue(`${prefix}.uf`,      data.uf ?? '')
+
+            if (data.municipio && data.uf) {
+                const uf = String(data.uf).toUpperCase()
+                if (!municipioCache[uf]) {
+                    const mr = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios?orderBy=nome`)
+                    if (mr.ok) municipioCache[uf] = await mr.json()
+                }
+                const match = (municipioCache[uf] ?? []).find(
+                    m => normalizeStr(m.nome) === normalizeStr(data.municipio)
+                )
+                setValue(`${prefix}.xMun`, match?.nome ?? data.municipio)
+                setValue(`${prefix}.cMun`, match ? String(match.id) : '')
+            }
+
+            if (onParceiroFound) {
+                const pr = await fetch('/api/parceiros', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tipoPessoa: 'J',
+                        xNome:   data.razao_social ?? '',
+                        cnpj,
+                        ie:      null,
+                        fone:    String(data.ddd_telefone_1 ?? '').replace(/\D/g, '') || null,
+                        email:   data.email || null,
+                        xLgr:    data.logradouro || null,
+                        nro:     data.numero || null,
+                        xBairro: data.bairro || null,
+                        cMun:    (municipioCache[data.uf ?? ''] ?? []).find(m => normalizeStr(m.nome) === normalizeStr(data.municipio ?? ''))?.id?.toString() || null,
+                        xMun:    data.municipio || null,
+                        uf:      data.uf || null,
+                        cep:     String(data.cep ?? '').replace(/\D/g, '') || null,
+                    }),
+                })
+                if (pr.ok) onParceiroFound(await pr.json())
+            }
+        } catch {
+            setLookupErr('Erro ao consultar Receita Federal')
+        } finally {
+            setLooking(false)
+        }
+    }
+
+    return (
+        <Controller
+            name={`${prefix}.cnpj`}
+            control={control}
+            render={({ field: cnpjField, fieldState }) => (
+                <Controller
+                    name={`${prefix}.cpf`}
+                    control={control}
+                    render={({ field: cpfField }) => {
+                        const rawDigits = ((cnpjField.value || cpfField.value) as string ?? '').replace(/\D/g, '')
+                        const isCnpj    = rawDigits.length > 11 || (!!cnpjField.value && !cpfField.value)
+                        const display   = isCnpj ? maskCnpj(cnpjField.value ?? '') : maskCpf(cpfField.value ?? '')
+
+                        function handleChange(raw: string) {
+                            const d = raw.replace(/\D/g, '').slice(0, 14)
+                            lastLookup.current = ''
+                            setLookupErr('')
+                            if (d.length <= 11) {
+                                setValue(`${prefix}.cnpj`, '')
+                                cpfField.onChange(d)
+                            } else {
+                                cpfField.onChange('')
+                                cnpjField.onChange(d)
+                                if (d.length === 14) lookupCnpj(d)
+                            }
+                        }
+
+                        return (
+                            <div>
+                                <Label className={fieldState.error ? 'text-red-600' : ''}>CNPJ / CPF</Label>
+                                <div className="relative mt-1">
+                                    <Input
+                                        value={display}
+                                        onChange={e => handleChange(e.target.value)}
+                                        placeholder="000.000.000-00"
+                                        maxLength={18}
+                                        className={`font-mono pr-8 ${fieldState.error ? 'border-red-500' : ''}`}
+                                    />
+                                    {looking && (
+                                        <span className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-sky-600" />
+                                    )}
+                                </div>
+                                {lookupErr && <p className="mt-1 text-xs text-amber-600">{lookupErr}</p>}
+                                {fieldState.error && <p className="mt-1 text-xs text-red-500">{fieldState.error.message}</p>}
+                            </div>
+                        )
+                    }}
+                />
+            )}
+        />
+    )
+}
+
+// ─── Município Picker ─────────────────────────────────────────────────────────
+
+type Municipio = { id: number; nome: string }
+const municipioCache: Record<string, Municipio[]> = {}
+
+function MunicipioPicker({ uf, value, onChange, placeholder = 'Selecione a cidade...' }: {
+    uf: string
+    value: string
+    onChange: (xMun: string, cMun: string) => void
+    placeholder?: string
+}) {
+    const [open, setOpen] = useState(false)
+    const [search, setSearch] = useState('')
+    const [municipios, setMunicipios] = useState<Municipio[]>([])
+    const [loading, setLoading] = useState(false)
+    const ref = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) {
+                setOpen(false)
+                setSearch('')
+            }
+        }
+        document.addEventListener('mousedown', handler)
+        return () => document.removeEventListener('mousedown', handler)
+    }, [])
+
+    useEffect(() => {
+        if (!uf || !open || municipioCache[uf]) {
+            if (uf && municipioCache[uf]) setMunicipios(municipioCache[uf])
+            return
+        }
+        setLoading(true)
+        fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios?orderBy=nome`)
+            .then(r => r.json())
+            .then((data: Municipio[]) => {
+                municipioCache[uf] = data
+                setMunicipios(data)
+            })
+            .catch(() => setMunicipios([]))
+            .finally(() => setLoading(false))
+    }, [uf, open])
+
+    const filtered = search.length >= 2
+        ? municipios.filter(m => m.nome.toLowerCase().includes(search.toLowerCase()))
+        : municipios.slice(0, 150)
+
+    return (
+        <div ref={ref} className="relative mt-1">
+            <button
+                type="button"
+                disabled={!uf}
+                onClick={() => uf && setOpen(v => !v)}
+                className={[
+                    'w-full h-9 px-3 text-sm border rounded-md bg-white text-left flex items-center justify-between gap-2',
+                    'border-input ring-offset-background',
+                    !uf ? 'opacity-50 cursor-not-allowed text-slate-400' : 'hover:border-slate-400 cursor-pointer',
+                    open ? 'ring-2 ring-ring ring-offset-2' : '',
+                ].join(' ')}
+            >
+                <span className={value ? 'text-slate-900 truncate' : 'text-slate-400'}>
+                    {value || placeholder}
+                </span>
+                <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6"/>
+                </svg>
+            </button>
+
+            {open && (
+                <div className="absolute z-50 top-full mt-1 w-full min-w-[200px] bg-white border rounded-lg shadow-xl">
+                    <div className="p-2 border-b">
+                        <input
+                            autoFocus
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            placeholder="Buscar município..."
+                            className="w-full px-2 py-1.5 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-sky-500"
+                        />
+                    </div>
+                    <div className="max-h-56 overflow-y-auto py-1">
+                        {loading ? (
+                            <p className="text-xs text-center py-4 text-slate-400">Carregando...</p>
+                        ) : filtered.length === 0 ? (
+                            <p className="text-xs text-center py-4 text-slate-400">Nenhum município encontrado</p>
+                        ) : filtered.map(m => (
+                            <button
+                                key={m.id}
+                                type="button"
+                                onClick={() => {
+                                    onChange(m.nome, String(m.id))
+                                    setOpen(false)
+                                    setSearch('')
+                                }}
+                                className={[
+                                    'w-full text-left px-3 py-2 text-sm transition-colors',
+                                    value === m.nome
+                                        ? 'bg-sky-50 text-sky-700 font-medium'
+                                        : 'hover:bg-slate-50',
+                                ].join(' ')}
+                            >
+                                {m.nome}
+                            </button>
+                        ))}
+                    </div>
+                    {search.length < 2 && municipios.length > 150 && (
+                        <p className="text-[11px] text-center py-1.5 text-slate-400 border-t">
+                            Digite ao menos 2 letras para filtrar
+                        </p>
+                    )}
+                </div>
+            )}
         </div>
     )
 }
@@ -1116,23 +2067,54 @@ function CF({
     )
 }
 
-function AddressSection({ prefix, control }: { prefix: 'rem' | 'dest'; control: any }) {
+function AddressSection({ prefix, control, setValue, watch }: {
+    prefix: 'rem' | 'dest'
+    control: any
+    setValue: any
+    watch: any
+}) {
+    const ufVal   = watch(`${prefix}.uf`)   ?? ''
+    const xMunVal = watch(`${prefix}.xMun`) ?? ''
+
     return (
         <div className="mt-4 pt-4 border-t">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Endereço</p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="md:col-span-2">
-                    <CF name={`${prefix}.xLgr`}    control={control} label="Logradouro" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="col-span-2 lg:col-span-2">
+                    <CF name={`${prefix}.xLgr`}  control={control} label="Logradouro" />
                 </div>
-                <CF name={`${prefix}.nro`}          control={control} label="Número" />
-                <CF name={`${prefix}.xBairro`}      control={control} label="Bairro" />
-                <CF name={`${prefix}.xMun`}         control={control} label="Município" />
-                <CF name={`${prefix}.uf`}           control={control} label="UF" maxLength={2}
-                    transform={v => v.replace(/[^a-zA-Z]/g, '').toUpperCase()} />
-                <CF name={`${prefix}.cep`}          control={control} label="CEP" mono
-                    mask={v => { const d = v.slice(0, 8); return d.length <= 5 ? d : `${d.slice(0,5)}-${d.slice(5)}` }}
+                <CF name={`${prefix}.nro`}        control={control} label="Número" />
+                <CF name={`${prefix}.xBairro`}    control={control} label="Bairro" />
+                <div>
+                    <Label className="text-sm">UF</Label>
+                    <Controller name={`${prefix}.uf`} control={control} render={({ field }) => (
+                        <Select value={field.value} onValueChange={v => {
+                            field.onChange(v)
+                            setValue(`${prefix}.xMun`, '')
+                            setValue(`${prefix}.cMun`, '')
+                        }}>
+                            <SelectTrigger className="mt-1"><SelectValue placeholder="UF" /></SelectTrigger>
+                            <SelectContent>
+                                {UF_LIST.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    )} />
+                </div>
+                <div className="col-span-2">
+                    <Label className="text-sm">Município</Label>
+                    <MunicipioPicker
+                        uf={ufVal}
+                        value={xMunVal}
+                        onChange={(xMun, cMun) => {
+                            setValue(`${prefix}.xMun`, xMun)
+                            setValue(`${prefix}.cMun`, cMun)
+                        }}
+                        placeholder="Selecione o município..."
+                    />
+                </div>
+                <CF name={`${prefix}.cep`} control={control} label="CEP" mono
+                    mask={v => { const d = v.replace(/\D/g, '').slice(0, 8); return d.length <= 5 ? d : `${d.slice(0,5)}-${d.slice(5)}` }}
                     strip={/\D/g} />
-                <CF name={`${prefix}.cMun`}         control={control} label="Cód. Município (IBGE)" />
             </div>
         </div>
     )

@@ -30,6 +30,11 @@ export async function emitirCte(payload: any) {
 }
 
 
+export async function sincronizarCte(id: string) {
+    const response = await axios.post(`/api/ctes/${id}/sync`)
+    return response.data
+}
+
 export async function cancelarCte(id: string, justificativa: string) {
     const response = await axios.post(`/api/nuvem/cte/${id}/cancelar`, {
         justificativa: justificativa ?? 'Erro na emissão do documento fiscal'
@@ -37,24 +42,26 @@ export async function cancelarCte(id: string, justificativa: string) {
     return response.data
 }
 
-export async function imprimirCte(id: string) {
-    const response = await axios.get(`/api/nuvem/cte/${id}/imprimir`, { responseType: 'blob' })
-
-    const blob = new Blob([response.data], { type: 'application/pdf' })
+function openPdfBlob(blob: Blob, filename: string) {
     const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.target = '_blank'
+    a.rel = 'noopener noreferrer'
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => window.URL.revokeObjectURL(url), 60_000)
+}
 
-    const iframe = document.createElement('iframe')
-    iframe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;border:0;opacity:0'
-    iframe.src = url
-    document.body.appendChild(iframe)
+export async function previewDacte(payload: any) {
+    const response = await axios.post('/api/nuvem/cte/previa-dacte', payload, { responseType: 'blob' })
+    openPdfBlob(new Blob([response.data], { type: 'application/pdf' }), 'previa-dacte.pdf')
+}
 
-    iframe.onload = () => {
-        iframe.contentWindow?.focus()
-        iframe.contentWindow?.print()
-        setTimeout(() => {
-            document.body.removeChild(iframe)
-            window.URL.revokeObjectURL(url)
-        }, 60_000)
-    }
+export async function imprimirCte(id: string) {
+    const response = await axios.get(`/api/ctes/${id}/dacte`, { responseType: 'blob' })
+    openPdfBlob(new Blob([response.data], { type: 'application/pdf' }), `dacte-${id}.pdf`)
 }
 

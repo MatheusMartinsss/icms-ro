@@ -37,6 +37,9 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const existing = await getOwned(params.id, session.user.empresaId)
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+    if (['autorizado', 'cancelado'].includes(existing.status ?? ''))
+        return NextResponse.json({ error: 'CT-e já autorizado ou cancelado não pode ser alterado' }, { status: 400 })
+
     const body = await req.json()
     const { infCte, status, idNuvem, chave, erroMsg } = body
 
@@ -81,6 +84,9 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
 
     const existing = await getOwned(params.id, session.user.empresaId)
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    if (['autorizado', 'cancelado'].includes(existing.status ?? ''))
+        return NextResponse.json({ error: 'CT-e já autorizado ou cancelado não pode ser excluído' }, { status: 400 })
 
     await prisma.cte.delete({ where: { id: params.id } })
     return NextResponse.json({ ok: true })
