@@ -42,26 +42,18 @@ export async function cancelarCte(id: string, justificativa: string) {
     return response.data
 }
 
-function openPdfBlob(blob: Blob, filename: string) {
+function openPdfPreview(blob: Blob) {
     const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.target = '_blank'
-    a.rel = 'noopener noreferrer'
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    window.open(url, '_blank', 'noopener,noreferrer')
     setTimeout(() => window.URL.revokeObjectURL(url), 60_000)
 }
 
 export async function previewDacte(payload: any) {
     const response = await axios.post('/api/nuvem/cte/previa-dacte', payload, { responseType: 'blob' })
-    openPdfBlob(new Blob([response.data], { type: 'application/pdf' }), 'previa-dacte.pdf')
+    openPdfPreview(new Blob([response.data], { type: 'application/pdf' }))
 }
 
 export async function imprimirCte(id: string) {
-    const response = await axios.get(`/api/ctes/${id}/dacte`, { responseType: 'blob' })
-    openPdfBlob(new Blob([response.data], { type: 'application/pdf' }), `dacte-${id}.pdf`)
+    window.open(`/api/ctes/${id}/dacte`, '_blank', 'noopener,noreferrer')
 }
 

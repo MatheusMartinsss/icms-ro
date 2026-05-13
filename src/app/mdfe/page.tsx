@@ -1,12 +1,16 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { imprimirMdfe, encerrarMdfe, cancelarMdfe } from '@/services/mdfe'
+import { imprimirMdfe, encerrarMdfe, cancelarMdfe, encerrarMdfePorChave } from '@/services/mdfe'
 import { useEmpresaConfig } from '@/components/configuracoes-empresa'
 import { Navbar } from '@/components/navbar'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 
 interface MdfeItem {
     id: string
@@ -46,6 +50,10 @@ export default function MdfePage() {
     const [loading, setLoading] = useState(false)
     const [status, setStatus] = useState('')
     const TAKE = 25
+
+    const [dialogChave, setDialogChave] = useState(false)
+    const [chaveInput, setChaveInput]   = useState('')
+    const [encerrando, setEncerrando]   = useState(false)
 
     async function load(p = 0, st = status) {
         setLoading(true)
@@ -101,6 +109,31 @@ export default function MdfePage() {
         }
     }
 
+    async function handleEncerrarPorChave() {
+        const chave = chaveInput.replace(/\D/g, '')
+        if (chave.length !== 44) {
+            toast.error('A chave de acesso deve ter 44 dígitos.')
+            return
+        }
+        setEncerrando(true)
+        try {
+            const dhEnc = new Date().toISOString()
+            await encerrarMdfePorChave(chave, {
+                cuf: Number(empresa.cuf ?? '11'),
+                dhEnc,
+                cMun: empresa.cMunEnv ?? '',
+            })
+            toast.success('MDF-e encerrado com sucesso.')
+            setDialogChave(false)
+            setChaveInput('')
+            load(page)
+        } catch (e: any) {
+            toast.error(e?.response?.data?.details?.message ?? e?.response?.data?.error ?? e?.message ?? 'Erro ao encerrar MDF-e.')
+        } finally {
+            setEncerrando(false)
+        }
+    }
+
     const pages = Math.max(1, Math.ceil(total / TAKE))
 
     return (
@@ -114,11 +147,19 @@ export default function MdfePage() {
                         <h1 className="text-2xl font-semibold">MDF-e</h1>
                         <p className="text-sm text-slate-500 mt-1">Manifesto Eletrônico de Documentos Fiscais</p>
                     </div>
-                    <Link href="/mdfe/emitir">
-                        <button className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium transition-colors">
-                            + Emitir MDF-e
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => { setChaveInput(''); setDialogChave(true) }}
+                            className="px-4 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-medium transition-colors"
+                        >
+                            Encerrar por chave
                         </button>
-                    </Link>
+                        <Link href="/mdfe/emitir">
+                            <button className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium transition-colors">
+                                + Emitir MDF-e
+                            </button>
+                        </Link>
+                    </div>
                 </div>
 
                 {/* Filtros */}
@@ -177,16 +218,22 @@ export default function MdfePage() {
                                     </td>
                                     <td className="px-4 py-3">
                                         <div className="flex gap-1.5 justify-end flex-wrap">
-                                            {item.status === 'rascunho' && (
+                                            {(item.status === 'rascunho' || item.status === 'erro') && (
                                                 <button
                                                     onClick={() => router.push(`/mdfe/emitir?id=${item.id}`)}
                                                     className="px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-700 text-xs hover:bg-sky-100 transition-colors"
                                                 >
-                                                    Continuar
+                                                    Editar
                                                 </button>
                                             )}
                                             {item.status === 'autorizado' && (
                                                 <>
+                                                    <button
+                                                        onClick={() => router.push(`/mdfe/emitir?id=${item.id}`)}
+                                                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 text-xs hover:bg-slate-50 transition-colors"
+                                                    >
+                                                        Abrir
+                                                    </button>
                                                     <button
                                                         onClick={() => item.idNuvem && imprimirMdfe(item.idNuvem).catch(e => toast.error(e?.message ?? 'Erro ao imprimir'))}
                                                         disabled={!item.idNuvem}
@@ -208,13 +255,23 @@ export default function MdfePage() {
                                                     </button>
                                                 </>
                                             )}
-                                            {item.status === 'encerrado' && item.idNuvem && (
-                                                <button
-                                                    onClick={() => imprimirMdfe(item.idNuvem!).catch(e => toast.error(e?.message ?? 'Erro'))}
-                                                    className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs hover:bg-slate-50 transition-colors"
-                                                >
-                                                    Imprimir
-                                                </button>
+                                            {(item.status === 'encerrado' || item.status === 'cancelado') && (
+                                                <>
+                                                    <button
+                                                        onClick={() => router.push(`/mdfe/emitir?id=${item.id}`)}
+                                                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 text-xs hover:bg-slate-50 transition-colors"
+                                                    >
+                                                        Abrir
+                                                    </button>
+                                                    {item.idNuvem && (
+                                                        <button
+                                                            onClick={() => imprimirMdfe(item.idNuvem!).catch(e => toast.error(e?.message ?? 'Erro'))}
+                                                            className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs hover:bg-slate-50 transition-colors"
+                                                        >
+                                                            Imprimir
+                                                        </button>
+                                                    )}
+                                                </>
                                             )}
                                         </div>
                                     </td>
@@ -236,6 +293,44 @@ export default function MdfePage() {
                     </div>
                 </div>
             </div>
+            {/* Dialog — encerrar por chave */}
+            <Dialog open={dialogChave} onOpenChange={v => { if (!encerrando) setDialogChave(v) }}>
+                <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Encerrar MDF-e por Chave de Acesso</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-1">
+                        <div>
+                            <Label className="text-xs text-slate-600">Chave de Acesso (44 dígitos)</Label>
+                            <Input
+                                value={chaveInput}
+                                onChange={e => setChaveInput(e.target.value.replace(/\D/g, '').slice(0, 44))}
+                                placeholder="00000000000000000000000000000000000000000000"
+                                className="mt-1 font-mono text-xs tracking-wide"
+                                disabled={encerrando}
+                            />
+                            <p className="text-[11px] text-slate-400 mt-1">
+                                {chaveInput.length}/44 dígitos
+                            </p>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-1">
+                            <Button variant="outline" onClick={() => setDialogChave(false)} disabled={encerrando}>
+                                Cancelar
+                            </Button>
+                            <Button
+                                onClick={handleEncerrarPorChave}
+                                disabled={encerrando || chaveInput.length !== 44}
+                                className="gap-2"
+                            >
+                                {encerrando && (
+                                    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                                )}
+                                {encerrando ? 'Encerrando...' : 'Encerrar MDF-e'}
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </main>
     )
 }

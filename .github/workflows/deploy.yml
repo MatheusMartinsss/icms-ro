@@ -1,0 +1,77 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  # ── 1. Build e push para o registry próprio ───────────────────────────────
+  build:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ${{ secrets.REGISTRY_HOST }}/icms-ro
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login no registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.REGISTRY_HOST }}
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build e push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to:   type=local,dest=/tmp/.buildx-cache-new,mode=max
+          build-args: |
+            DATABASE_URL=postgresql://x:x@localhost/x
+
+      - name: Mover cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+  # ── 2. Deploy no VPS ──────────────────────────────────────────────────────
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host:     ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          envs:     REGISTRY_HOST
+          script: |
+            set -e
+            cd /opt/icms-ro
+
+            # Puxa imagem nova do registry local
+            REGISTRY_HOST=$REGISTRY_HOST docker compose pull app
+
+            # Reinicia o container
+            REGISTRY_HOST=$REGISTRY_HOST docker compose up -d --no-build app
+
+            # Remove imagens antigas
+            docker image prune -f
+        env:
+          REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}

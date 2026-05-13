@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { CurrencyInput } from '@/components/ui/currency-input'
 import { Search, PenLine } from 'lucide-react'
 import { useEmpresaConfig } from '@/components/configuracoes-empresa'
-import { MdfeBuilder, type CteSelecionado } from '@/lib/mdfe/builder'
+import { MdfeBuilder, type CteSelecionado, type SegCarga, type InfPag } from '@/lib/mdfe/builder'
 import { emitirMdfe, imprimirMdfe } from '@/services/mdfe'
 import { Navbar } from '@/components/navbar'
 
@@ -48,7 +48,7 @@ const schema = z.object({
     percurso:    z.array(ufItem),
     munDescarga: z.array(munItem),
     // Veículo de tração
-    rntrc:    z.string().regex(/^([0-9]{8}|ISENTO)$/, '8 dígitos ou ISENTO'),
+    rntrc:    z.string().refine(v => !v || /^([0-9]{8}|ISENTO)$/.test(v), '8 dígitos ou ISENTO'),
     placa:    z.string().min(7, 'Placa inválida'),
     renavam:  z.string().optional(),
     tara:     z.string().min(1, 'Obrigatório'),
@@ -71,11 +71,36 @@ const schema = z.object({
         ufVeic:  z.string().optional(),
         prop:    propItem.optional(),
     })).max(3),
+    // Produto predominante (modal rodoviário)
+    tpCarga:      z.string().min(1, 'Obrigatório'),
+    xProd:        z.string().min(2, 'Obrigatório'),
+    prodNCM:      z.string().refine(v => !v || /^\d{8}$/.test(v), 'NCM deve ter 8 dígitos').optional(),
+    cepCarrega:   z.string().optional(),
+    cepDescarrega: z.string().optional(),
+    // Pagamento do Frete
+    infPag: z.array(z.object({
+        xNome:     z.string().min(2, 'Obrigatório'),
+        doc:       z.string().refine(v => !v || [11, 14].includes(v.replace(/\D/g, '').length), 'CPF (11) ou CNPJ (14 dígitos)').optional(),
+        chPix:     z.string().optional(),
+        indPag:    z.enum(['0', '1']),
+        tpComp:    z.enum(['01', '02', '03', '99']),
+        vContrato: z.string(),
+    })),
+    // Contratante do Serviço
+    contCNPJ: z.string().refine(v => v.replace(/\D/g,'').length === 14, 'CNPJ inválido'),
+    contNome: z.string().optional(),
     // Totais
     vCarga: z.string().refine(v => Number(v) > 0, 'Obrigatório'),
     qCarga: z.string().min(1, 'Obrigatório'),
     cUnid:  z.enum(['01', '02']),
     infCpl: z.string(),
+    // Seguro da Carga
+    segRespSeg:   z.enum(['1', '2']),
+    segCNPJResp:  z.string().refine(v => v.replace(/\D/g,'').length === 14, 'CNPJ inválido'),
+    segXSeg:      z.string().min(2, 'Nome da seguradora obrigatório').max(30, 'Máximo 30 caracteres'),
+    segCNPJSeg:   z.string().refine(v => v.replace(/\D/g,'').length === 14, 'CNPJ inválido'),
+    segNApol:     z.string().optional(),
+    segNAver:     z.string().optional(),
 })
 
 type FormValues = z.infer<typeof schema>
@@ -121,6 +146,25 @@ const TP_PROP = [
     { value: '2', label: 'Outros' },
 ]
 
+const TP_RESP_SEG = [
+    { value: '1', label: 'Emitente' },
+    { value: '2', label: 'Contratante do Serviço' },
+]
+
+const TP_CARGA = [
+    { value: '01', label: 'Granel sólido' },
+    { value: '02', label: 'Granel líquido' },
+    { value: '03', label: 'Frigorificado' },
+    { value: '04', label: 'Conteinerizada' },
+    { value: '05', label: 'Carga Geral' },
+    { value: '06', label: 'Neogranel' },
+    { value: '07', label: 'Perigosa (granel sólido)' },
+    { value: '08', label: 'Perigosa (granel líquido)' },
+    { value: '09', label: 'Perigosa (frigorificada)' },
+    { value: '10', label: 'Perigosa (conteinerizada)' },
+    { value: '11', label: 'Perigosa (carga geral)' },
+]
+
 function defaultProp() {
     return { cpfCnpj: 'cpf' as const, cpf: '', cnpj: '', rntrc: '', xNome: '', ie: '', uf: '', tpProp: '0' }
 }
@@ -139,8 +183,12 @@ function defaultValues(): FormValues {
         tpRod: '01', tpCar: '00', ufVeic: 'RO', prop: undefined,
         condNome: '', condCpf: '',
         veicReboque: [],
+        infPag: [] as any[],
+        contCNPJ: '', contNome: '',
+        tpCarga: '05', xProd: '', prodNCM: '', cepCarrega: '', cepDescarrega: '',
         vCarga: '', qCarga: '', cUnid: '01',
         infCpl: '',
+        segRespSeg: '1', segCNPJResp: '', segXSeg: '', segCNPJSeg: '', segNApol: '0000', segNAver: '0000',
     }
 }
 
@@ -170,11 +218,12 @@ function maskRntrc(v: string) {
 
 type Status = 'idle' | 'loading' | 'success' | 'error'
 
-function Card({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
+function Card({ title, children, className, action }: { title: string; children: React.ReactNode; className?: string; action?: React.ReactNode }) {
     return (
         <div className={`bg-white rounded-2xl border shadow-sm mt-2 ${className ?? ''}`}>
-            <div className="px-5 py-3 border-b">
+            <div className="px-5 py-3 border-b flex items-center justify-between">
                 <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{title}</h2>
+                {action}
             </div>
             <div className="p-5 space-y-3">
                 {children}
@@ -869,6 +918,7 @@ export default function EmitirMdfePage() {
     const { config: empresa } = useEmpresaConfig()
 
     const [draftId, setDraftId]               = useState<string | null>(null)
+    const [loadedStatus, setLoadedStatus]     = useState<string | null>(null)
     const [nMDFe, setNMDFe]                   = useState<number>(1)
     const [status, setStatus]                 = useState<Status>('idle')
     const [errMsg, setErrMsg]                 = useState('')
@@ -894,16 +944,26 @@ export default function EmitirMdfePage() {
     const { fields: percursoFields,     append: addPercurso,     remove: removePercurso     } = useFieldArray({ control, name: 'percurso' })
     const { fields: munDescargaFields,  append: addMunDescarga,  remove: removeMunDescarga  } = useFieldArray({ control, name: 'munDescarga' })
     const { fields: reboqueFields,      append: addReboque,      remove: removeReboque      } = useFieldArray({ control, name: 'veicReboque' })
+    const { fields: pagFields,          append: addPagItem,      remove: removePagItem      } = useFieldArray({ control, name: 'infPag' })
 
     const ufIni = watch('ufIni')
     const ufFim = watch('ufFim')
 
     // Pré-preenche com dados da empresa
     useEffect(() => {
-        if (empresa.rntrc)   setValue('rntrc', empresa.rntrc)
-        if (empresa.ufEnv)   setValue('ufIni', empresa.ufEnv)
+        if (empresa.rntrc)        setValue('rntrc', empresa.rntrc)
+        if (empresa.ufEnv)        setValue('ufIni', empresa.ufEnv)
         if (empresa.sequenciaMdfe) setNMDFe(empresa.sequenciaMdfe)
-    }, [empresa.rntrc, empresa.ufEnv, empresa.sequenciaMdfe, empresa.cMunEnv, empresa.xMunEnv])
+        if (empresa.cnpj) {
+            setValue('segCNPJResp', empresa.cnpj.replace(/\D/g, ''))
+            setValue('segCNPJSeg',  empresa.cnpj.replace(/\D/g, ''))
+            setValue('contCNPJ',    empresa.cnpj.replace(/\D/g, ''))
+        }
+        if (empresa.razaoSocial) {
+            setValue('segXSeg',  empresa.razaoSocial.toUpperCase().slice(0, 30))
+            setValue('contNome', empresa.razaoSocial)
+        }
+    }, [empresa.rntrc, empresa.ufEnv, empresa.sequenciaMdfe, empresa.cnpj, empresa.razaoSocial])
 
     // Carrega rascunho via ?id=
     useEffect(() => {
@@ -913,6 +973,7 @@ export default function EmitirMdfePage() {
         fetch(`/api/mdfes/${id}`)
             .then(r => r.ok ? r.json() : Promise.reject())
             .then((mdfe: any) => {
+                if (mdfe.status) setLoadedStatus(mdfe.status)
                 const inf  = mdfe.infMDFe
                 if (!inf) return
                 const ide  = inf.ide ?? {}
@@ -931,6 +992,20 @@ export default function EmitirMdfePage() {
                     munCarrega:  (ide.infMunCarrega ?? []).map((m: any) => ({ cMun: m.cMunCarrega ?? '', xMun: m.xMunCarrega ?? '' })),
                     percurso:    (ide.infPercurso ?? []).map((p: any) => ({ uf: p.UFPer })),
                     munDescarga: (inf._munDescarga ?? []).map((m: any) => ({ cMun: m.cMun ?? '', xMun: m.xMun ?? '' })),
+                    infPag: (() => {
+                        const raw = rodo.infPag ?? []
+                        const list = Array.isArray(raw) ? raw : [raw]
+                        return list.map((p: any) => ({
+                            xNome:     p.xNome ?? '',
+                            doc:       (p.cnpj ?? p.CNPJ ?? p.cpf ?? p.CPF ?? '').replace(/\D/g, ''),
+                            chPix:     p.infBanc?.PIX ?? '',
+                            indPag:    p.indPag ?? '0',
+                            tpComp:    p.comp?.[0]?.tpComp ?? '99',
+                            vContrato: String(p.vContrato ?? ''),
+                        }))
+                    })(),
+                    contCNPJ: ((rodo.infANTT?.infContratante?.[0]?.cnpj ?? rodo.infANTT?.infContratante?.[0]?.CNPJ ?? '')).replace(/\D/g, ''),
+                    contNome: rodo.infANTT?.infContratante?.[0]?.xNome ?? '',
                     rntrc:    rodo.infANTT?.RNTRC ?? '',
                     placa:    veic.placa ?? '',
                     renavam:  veic.RENAVAM ?? '',
@@ -971,10 +1046,21 @@ export default function EmitirMdfePage() {
                             tpProp: String(r.prop.tpProp ?? '0'),
                         } : undefined,
                     })),
+                    tpCarga:      inf.infModal?.rodo?.prodPred?.tpCarga ?? '06',
+                    xProd:        inf.infModal?.rodo?.prodPred?.xProd   ?? '',
+                    prodNCM:      inf.infModal?.rodo?.prodPred?.NCM      ?? '',
+                    cepCarrega:   inf.infModal?.rodo?.prodPred?.infLotacao?.cepCarrega    ?? '',
+                    cepDescarrega: inf.infModal?.rodo?.prodPred?.infLotacao?.cepDescarrega ?? '',
                     vCarga:   String(tot.vCarga ?? ''),
                     qCarga:   String(tot.qCarga ?? ''),
                     cUnid:    tot.cUnid ?? '01',
                     infCpl:   inf.infAdic?.infCpl ?? '',
+                    segRespSeg:  (inf.seg?.respSeg ?? '1') as '1' | '2',
+                    segCNPJResp: (inf.seg?.cnpj ?? inf.seg?.CNPJ ?? '').replace(/\D/g, ''),
+                    segXSeg:     inf.seg?.infSeg?.xSeg ?? '',
+                    segCNPJSeg:  (inf.seg?.infSeg?.cnpj ?? inf.seg?.infSeg?.CNPJ ?? '').replace(/\D/g, ''),
+                    segNApol:    inf.seg?.nApol ?? '',
+                    segNAver:    (Array.isArray(inf.seg?.nAver) ? inf.seg.nAver[0] : (inf.seg?.nAver ?? '')) ?? '',
                 })
                 const cteList: CteSelecionado[] = []
                 for (const mun of inf.infDoc?.infMunDescarga ?? []) {
@@ -1052,6 +1138,14 @@ export default function EmitirMdfePage() {
                     ie:     vals.prop.ie  || undefined,
                     uf:     vals.prop.uf  || undefined,
                 } : undefined,
+            }, {
+                tpCarga: vals.tpCarga,
+                xProd:   vals.xProd,
+                ncm:     vals.prodNCM || undefined,
+                ...(ctesSelecionados.length === 1 ? { infLotacao: {
+                    cepCarrega:    vals.cepCarrega    || undefined,
+                    cepDescarrega: vals.cepDescarrega || undefined,
+                }} : {}),
             }, vals.veicReboque.map(r => ({
                 placa:   r.placa,
                 tpCar:   r.tpCar,
@@ -1070,10 +1164,36 @@ export default function EmitirMdfePage() {
                     uf:     r.prop.uf  || undefined,
                 } : undefined,
             })))
+            .addContratante({ cnpj: vals.contCNPJ?.replace(/\D/g, '') || undefined, xNome: vals.contNome || undefined })
             .addCondutor({ xNome: vals.condNome, cpf: vals.condCpf })
             .addCtes(ctesSelecionados)
             .buildTot({ vCarga: Number(vals.vCarga), qCarga: Number(vals.qCarga), cUnid: vals.cUnid })
             .buildAdic(vals.infCpl)
+            .buildSeg({
+                respSeg:  vals.segRespSeg,
+                cnpj:     vals.segCNPJResp?.replace(/\D/g, '') || undefined,
+                infSeg:   vals.segXSeg ? {
+                    xSeg: vals.segXSeg,
+                    cnpj: vals.segCNPJSeg?.replace(/\D/g, '') || undefined,
+                } : undefined,
+                nApol: vals.segNApol || undefined,
+                nAver: vals.segNAver ? [vals.segNAver] : undefined,
+            });
+
+        if (vals.infPag.length) {
+            builder.buildPag(vals.infPag.map(p => {
+                const doc = p.doc?.replace(/\D/g, '') || ''
+                return {
+                    xNome:     p.xNome,
+                    cnpj:      doc.length === 14 ? doc : undefined,
+                    cpf:       doc.length === 11 ? doc : undefined,
+                    chPix:     p.chPix || undefined,
+                    indPag:    p.indPag,
+                    vContrato: Number(p.vContrato) || 0,
+                    comp:      [{ tpComp: p.tpComp, vComp: Number(p.vContrato) || 0 }],
+                }
+            }))
+        }
 
         if (vals.rntrc) {
             const payload = builder.build()
@@ -1144,6 +1264,7 @@ export default function EmitirMdfePage() {
                 toast.info(`MDF-e criado — status: ${result?.status ?? 'desconhecido'}`, { duration: 8000 })
             }
         } catch (e: any) {
+            console.error('MDFE_EMIT_ERROR =>', e?.response?.data ?? e)
             const apiErr = e?.response?.data
             const msg = apiErr?.details?.error?.message ?? apiErr?.details?.message ?? apiErr?.error ?? e?.message ?? 'Erro ao emitir MDF-e.'
             setStatus('error')
@@ -1175,6 +1296,60 @@ export default function EmitirMdfePage() {
         if (totalValor > 0) setValue('vCarga', totalValor.toFixed(2))
     }
 
+    function extractCteData(full: any) {
+        const ide      = full.infCte?.ide ?? {}
+        const dest     = full.infCte?.dest ?? {}
+        const ender    = dest.enderDest ?? {}
+        const infCarga = full.infCte?.infCTeNorm?.infCarga ?? {}
+        console.log('CTE_RAW infCarga =>', infCarga, '| qtCarga =>', infCarga.qtCarga)
+
+        const cMunCarrega  = String(ide.cMunIni ?? '')
+        const xMunCarrega  = ide.xMunIni ?? ''
+        const cMunDescarga = String(ender.cMun ?? ide.cMunFim ?? '')
+        const xMunDescarga = ender.xMun ?? ide.xMunFim ?? dest.xNome ?? ''
+
+        // infQ é o array de quantidades no CT-e (qtCarga é nome alternativo)
+        const qtArr: any[] = Array.isArray(infCarga.infQ) ? infCarga.infQ
+            : infCarga.infQ ? [infCarga.infQ]
+            : Array.isArray(infCarga.qtCarga) ? infCarga.qtCarga
+            : infCarga.qtCarga ? [infCarga.qtCarga] : []
+
+        let peso = 0
+        for (const qt of qtArr) {
+            const unid = String(qt.cUnid ?? '')
+            const med  = String(qt.tpMed ?? '').toUpperCase()
+            if (unid === '01' || med.includes('KG') || med.includes('PESO')) {
+                peso = Number(qt.qCarga) || 0; break
+            }
+        }
+        if (!peso) {
+            for (const qt of qtArr) {
+                if (String(qt.cUnid) === '02') { peso = (Number(qt.qCarga) || 0) * 1000; break }
+            }
+        }
+        if (!peso && qtArr.length > 0) peso = Number(qtArr[0].qCarga) || 0
+
+        const valor = Number(infCarga.vCarga)
+            || Number(full.infCte?.vPrest?.vTPrest)
+            || Number(full.valorTotal)
+            || 0
+
+        const xProd = String(infCarga.proPred ?? '').trim()
+
+        const cepCarrega    = String(full.infCte?.rem?.enderReme?.CEP  ?? '').replace(/\D/g, '')
+        const cepDescarrega = String(full.infCte?.dest?.enderDest?.CEP ?? '').replace(/\D/g, '')
+
+        const remNome = String(full.infCte?.rem?.xNome ?? '').trim()
+        const remCnpj = String(full.infCte?.rem?.CNPJ  ?? '').replace(/\D/g, '')
+        const remCpf  = String(full.infCte?.rem?.CPF   ?? '').replace(/\D/g, '')
+        const vFrete  = Number(full.infCte?.vPrest?.vTPrest) || valor
+
+        return { cMunCarrega, xMunCarrega, cMunDescarga, xMunDescarga,
+                 ufIni: ide.UFIni ?? '', ufFim: ide.UFFim ?? '', peso, valor,
+                 xProd, cepCarrega, cepDescarrega,
+                 remNome, remCnpj, remCpf, vFrete }
+    }
+
     function toggleCte(cte: any) {
         const chave = cte.chave ?? ''
         if (!chave) return toast.error('CT-e sem chave de acesso.')
@@ -1183,55 +1358,67 @@ export default function EmitirMdfePage() {
         if (exists) {
             const newSelected = ctesSelecionados.filter(c => c.chave !== chave)
             setCtesSelecionados(newSelected)
-            const newMap = { ...cteDataMap }
-            delete newMap[chave]
-            setCteDataMap(newMap)
-            recalcTotals(newMap, newSelected)
+            setCteDataMap(prev => {
+                const newMap = { ...prev }
+                // Remove pagador associado a este CT-e (pela chave gravada no mapa)
+                const removedDoc = (newMap[chave] as any)?.remCnpj as string | undefined
+                if (removedDoc) {
+                    const cur = getValues('infPag') ?? []
+                    const idx = cur.findIndex((p: any) => p.doc?.replace(/\D/g, '') === removedDoc)
+                    if (idx !== -1) removePagItem(idx)
+                }
+                delete newMap[chave]
+                recalcTotals(newMap, newSelected)
+                return newMap
+            })
         } else {
             const newSelected = [...ctesSelecionados, { chave, cMunDescarga: '', xMunDescarga: cte.nomeDestinatario ?? '' }]
             setCtesSelecionados(newSelected)
 
             fetch(`/api/ctes/${cte.id}`).then(r => r.json()).then(full => {
-                const ide      = full.infCte?.ide ?? {}
-                const dest     = full.infCte?.dest ?? {}
-                const ender    = dest.enderDest ?? {}
-                const infCarga = full.infCte?.infCTeNorm?.infCarga ?? {}
+                const { cMunCarrega, xMunCarrega, cMunDescarga, xMunDescarga,
+                        ufIni, ufFim, peso, valor, xProd, cepCarrega, cepDescarrega,
+                        remNome, remCnpj, remCpf, vFrete } = extractCteData(full)
 
-                const cMunCarrega  = String(ide.cMunIni ?? '')
-                const xMunCarrega  = ide.xMunIni ?? ''
-                const cMunDescarga = String(ender.cMun ?? ide.cMunFim ?? '')
-                const xMunDescarga = ender.xMun ?? ide.xMunFim ?? dest.xNome ?? ''
-                const ufIniCte     = ide.UFIni ?? ''
-                const ufFimCte     = ide.UFFim ?? ''
-
-                // Atualiza UF de carregamento e descarregamento
-                if (ufIniCte) setValue('ufIni', ufIniCte)
-                if (ufFimCte) setValue('ufFim', ufFimCte)
-
-                // Peso: pega a qtCarga com tpMed de PESO ou a primeira disponível
-                const qtArr = Array.isArray(infCarga.qtCarga) ? infCarga.qtCarga
-                    : infCarga.qtCarga ? [infCarga.qtCarga] : []
-                let peso = 0
-                for (const qt of qtArr) {
-                    if (String(qt.cUnid) === '02' || String(qt.tpMed ?? '').toUpperCase().includes('PESO')) {
-                        peso = Number(qt.qCarga) || 0; break
-                    }
+                console.log('CTE_DATA =>', { cMunCarrega, xMunCarrega, cMunDescarga, xMunDescarga, ufIni, ufFim, peso, valor, xProd, cepCarrega, cepDescarrega })
+                if (ufIni) setValue('ufIni', ufIni)
+                if (ufFim) setValue('ufFim', ufFim)
+                if (xProd) setValue('xProd', xProd)
+                if (newSelected.length === 1) {
+                    if (cepCarrega)    setValue('cepCarrega',    cepCarrega)
+                    if (cepDescarrega) setValue('cepDescarrega', cepDescarrega)
                 }
-                if (!peso && qtArr.length > 0) peso = Number(qtArr[0].qCarga) || 0
 
-                const valor = Number(infCarga.vCarga) || Number(full.infCte?.vPrest?.vTPrest) || 0
-
-                // Atualiza cMunDescarga no array de selecionados
                 setCtesSelecionados(prev => prev.map(c =>
                     c.chave === chave ? { ...c, cMunDescarga, xMunDescarga } : c
                 ))
 
-                // Atualiza mapa e recalcula
-                const newMap = { ...cteDataMap, [chave]: { cMunCarrega, xMunCarrega, cMunDescarga, xMunDescarga, peso, valor } }
-                setCteDataMap(newMap)
-                recalcTotals(newMap, newSelected)
+                // Atualiza mapa com update funcional para evitar stale closure
+                setCteDataMap(prev => {
+                    const newMap = { ...prev, [chave]: { cMunCarrega, xMunCarrega, cMunDescarga, xMunDescarga, peso, valor, remCnpj } }
+                    recalcTotals(newMap, newSelected)
+                    return newMap
+                })
 
-                // Adiciona munCarrega se ainda não existir
+                // Adiciona remetente como pagador se ainda não estiver na lista
+                if (remNome) {
+                    const cur = getValues('infPag') ?? []
+                    const docRem = remCnpj || remCpf
+                    const jaExiste = docRem
+                        ? cur.some((p: any) => p.doc?.replace(/\D/g, '') === docRem)
+                        : cur.some((p: any) => p.xNome === remNome)
+                    if (!jaExiste) {
+                        addPagItem({
+                            xNome:     remNome,
+                            doc:       docRem,
+                            chPix:     getValues('condCpf')?.replace(/\D/g, '') ?? '',
+                            indPag:    '0',
+                            tpComp:    '99',
+                            vContrato: String(vFrete || ''),
+                        })
+                    }
+                }
+
                 if (cMunCarrega) {
                     const curCarrega = getValues('munCarrega') ?? []
                     if (!curCarrega.some((m: any) => String(m.cMun) === cMunCarrega)) {
@@ -1239,7 +1426,6 @@ export default function EmitirMdfePage() {
                     }
                 }
 
-                // Adiciona munDescarga se ainda não existir
                 if (cMunDescarga) {
                     const curDescarga = getValues('munDescarga') ?? []
                     if (!curDescarga.some((m: any) => String(m.cMun) === cMunDescarga)) {
@@ -1253,7 +1439,8 @@ export default function EmitirMdfePage() {
     const tabError = {
         percurso: !!(errors.munCarrega),
         veiculo:  !!(errors.placa || errors.tpRod || errors.tpCar || errors.condNome || errors.condCpf || errors.rntrc || errors.tara || errors.veicReboque),
-        totais:   !!(errors.vCarga || errors.qCarga),
+        totais:   !!(errors.vCarga || errors.qCarga || errors.tpCarga || errors.xProd || errors.contCNPJ),
+        seguro:   !!(errors.segCNPJResp || errors.segXSeg || errors.segCNPJSeg),
     }
 
     return (
@@ -1311,7 +1498,15 @@ export default function EmitirMdfePage() {
                             )}
                         </TabsTrigger>
                         <TabsTrigger value="totais" className="relative">
-                            Totais {tabError.totais && <ErrorDot />}
+                            Informações Adicionais {tabError.totais && <ErrorDot />}
+                        </TabsTrigger>
+                        <TabsTrigger value="seguro" className="relative">
+                            Seguro {tabError.seguro && <ErrorDot />}
+                        </TabsTrigger>
+                        <TabsTrigger value="pagamento">
+                            Pagamento {pagFields.length > 0 && (
+                                <span className="ml-1.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-sky-100 text-sky-700 text-[10px] font-bold">{pagFields.length}</span>
+                            )}
                         </TabsTrigger>
                     </TabsList>
 
@@ -1728,13 +1923,60 @@ export default function EmitirMdfePage() {
 
                     {/* ── Totais / Observação ── */}
                     <TabsContent value="totais">
+                        <Card title="Contratante do Serviço">
+                            <div className="grid grid-cols-2 gap-4">
+                                <Controller name="contCNPJ" control={control} render={({ field, fieldState }) => (
+                                    <Field label="CNPJ do Contratante *" error={fieldState.error?.message}
+                                        value={maskCnpj(field.value)} onChange={v => field.onChange(v.replace(/\D/g, '').slice(0, 14))}
+                                        placeholder="00.000.000/0001-00" mono />
+                                )} />
+                                <Controller name="contNome" control={control} render={({ field }) => (
+                                    <Field label="Nome do Contratante" value={field.value ?? ''}
+                                        onChange={field.onChange} placeholder="Opcional" />
+                                )} />
+                            </div>
+                        </Card>
+
+                        <Card title="Produto Predominante">
+                            <div className="grid grid-cols-2 gap-4">
+                                <Controller name="tpCarga" control={control} render={({ field, fieldState }) => (
+                                    <SelectField label="Tipo de Carga" value={field.value} onChange={field.onChange}
+                                        options={TP_CARGA} error={fieldState.error?.message} />
+                                )} />
+                                <Controller name="xProd" control={control} render={({ field, fieldState }) => (
+                                    <Field label="Descrição do Produto" error={fieldState.error?.message}
+                                        value={field.value} onChange={field.onChange} placeholder="Ex: Mercadorias em geral" />
+                                )} />
+                                <Controller name="prodNCM" control={control} render={({ field, fieldState }) => (
+                                    <Field label="NCM (8 dígitos)" error={fieldState.error?.message}
+                                        value={field.value ?? ''} onChange={v => field.onChange(v.replace(/\D/g, '').slice(0, 8))}
+                                        placeholder="00000000" mono />
+                                )} />
+                            </div>
+                            {ctesSelecionados.length === 1 && (
+                                <div className="mt-4 grid grid-cols-2 gap-4">
+                                    <p className="col-span-2 text-xs text-amber-600 font-medium">Apenas 1 CT-e selecionado — preencha os CEPs de lotação:</p>
+                                    <Controller name="cepCarrega" control={control} render={({ field, fieldState }) => (
+                                        <Field label="CEP de Carregamento" error={fieldState.error?.message}
+                                            value={field.value ?? ''} onChange={v => field.onChange(v.replace(/\D/g, '').slice(0, 8))}
+                                            placeholder="00000000" mono />
+                                    )} />
+                                    <Controller name="cepDescarrega" control={control} render={({ field, fieldState }) => (
+                                        <Field label="CEP de Descarregamento" error={fieldState.error?.message}
+                                            value={field.value ?? ''} onChange={v => field.onChange(v.replace(/\D/g, '').slice(0, 8))}
+                                            placeholder="00000000" mono />
+                                    )} />
+                                </div>
+                            )}
+                        </Card>
+
                         <Card title="Totais da Carga">
                             <div className="grid grid-cols-3 gap-4">
                                 <Controller name="vCarga" control={control} render={({ field, fieldState }) => (
                                     <CurrencyInput label="Valor da Carga" value={field.value} onChange={field.onChange} error={fieldState.error?.message} />
                                 )} />
                                 <Controller name="qCarga" control={control} render={({ field, fieldState }) => (
-                                    <Field label="Quantidade" error={fieldState.error?.message}
+                                    <Field label="Peso da Mercadoria" error={fieldState.error?.message}
                                         value={field.value} onChange={v => field.onChange(v.replace(/[^\d.,]/g, ''))}
                                         placeholder="0,000" mono />
                                 )} />
@@ -1755,6 +1997,107 @@ export default function EmitirMdfePage() {
                             )} />
                         </Card>
                     </TabsContent>
+
+                    {/* ── Seguro da Carga ── */}
+                    <TabsContent value="seguro">
+                        <Card title="Seguro da Carga">
+                            <div className="grid grid-cols-2 gap-4">
+                                <Controller name="segRespSeg" control={control} render={({ field }) => (
+                                    <SelectField label="Responsável pelo Seguro" value={field.value}
+                                        onChange={field.onChange} options={TP_RESP_SEG} />
+                                )} />
+                                <Controller name="segCNPJResp" control={control} render={({ field, fieldState }) => (
+                                    <Field label="CNPJ do Responsável *" error={fieldState.error?.message}
+                                        value={maskCnpj(field.value)} onChange={v => field.onChange(v.replace(/\D/g, '').slice(0, 14))}
+                                        placeholder="00.000.000/0001-00" mono />
+                                )} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <Controller name="segXSeg" control={control} render={({ field, fieldState }) => (
+                                    <Field label="Nome da Seguradora * (máx. 30)" error={fieldState.error?.message}
+                                        value={field.value} onChange={v => field.onChange(v.toUpperCase().slice(0, 30))}
+                                        placeholder="Ex: PORTO SEGURO" />
+                                )} />
+                                <Controller name="segCNPJSeg" control={control} render={({ field, fieldState }) => (
+                                    <Field label="CNPJ da Seguradora *" error={fieldState.error?.message}
+                                        value={maskCnpj(field.value)} onChange={v => field.onChange(v.replace(/\D/g, '').slice(0, 14))}
+                                        placeholder="00.000.000/0001-00" mono />
+                                )} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <Controller name="segNApol" control={control} render={({ field }) => (
+                                    <Field label="Número da Apólice" value={field.value ?? ''}
+                                        onChange={field.onChange} placeholder="Opcional" />
+                                )} />
+                                <Controller name="segNAver" control={control} render={({ field }) => (
+                                    <Field label="Número de Averbação" value={field.value ?? ''}
+                                        onChange={field.onChange} placeholder="Opcional" />
+                                )} />
+                            </div>
+                        </Card>
+                    </TabsContent>
+
+                    {/* ── Pagamento do Frete ── */}
+                    <TabsContent value="pagamento" className="space-y-4">
+                        {pagFields.length === 0 && (
+                            <p className="text-sm text-slate-400 text-center py-6">Nenhum pagador adicionado.</p>
+                        )}
+                        {pagFields.map((f, i) => (
+                            <Card key={f.id} title={`Pagador ${i + 1}`} action={
+                                <button type="button" onClick={() => removePagItem(i)}
+                                    className="text-xs text-red-400 hover:text-red-600">Remover</button>
+                            }>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <Controller name={`infPag.${i}.xNome`} control={control} render={({ field, fieldState }) => (
+                                        <Field label="Nome do Pagador *" error={fieldState.error?.message}
+                                            value={field.value} onChange={field.onChange} placeholder="Razão social" />
+                                    )} />
+                                    <Controller name={`infPag.${i}.doc`} control={control} render={({ field, fieldState }) => (
+                                        <Field label="CPF / CNPJ do Pagador" error={fieldState.error?.message}
+                                            value={field.value ?? ''} onChange={v => field.onChange(v.replace(/\D/g, '').slice(0, 14))}
+                                            placeholder="CPF (11) ou CNPJ (14 dígitos)" mono />
+                                    )} />
+                                    <Controller name={`infPag.${i}.chPix`} control={control} render={({ field }) => (
+                                        <Field label="Chave PIX (infBanc)"
+                                            value={field.value ?? ''} onChange={field.onChange}
+                                            placeholder="CPF, CNPJ, e-mail, telefone ou aleatória" />
+                                    )} />
+                                    <Controller name={`infPag.${i}.vContrato`} control={control} render={({ field, fieldState }) => (
+                                        <Field label="Valor do Contrato *" error={fieldState.error?.message}
+                                            value={field.value} onChange={v => field.onChange(v.replace(/[^\d.,]/g, ''))}
+                                            placeholder="0,00" mono />
+                                    )} />
+                                    <Controller name={`infPag.${i}.indPag`} control={control} render={({ field }) => (
+                                        <SelectField label="Forma de Pagamento" value={field.value} onChange={field.onChange}
+                                            options={[{ value: '0', label: 'À Vista' }, { value: '1', label: 'À Prazo' }]} />
+                                    )} />
+                                    <Controller name={`infPag.${i}.tpComp`} control={control} render={({ field }) => (
+                                        <SelectField label="Tipo do Componente" value={field.value} onChange={field.onChange}
+                                            options={[
+                                                { value: '01', label: 'Vale Pedágio' },
+                                                { value: '02', label: 'Alimentação' },
+                                                { value: '03', label: 'Combustível' },
+                                                { value: '99', label: 'Outros' },
+                                            ]} />
+                                    )} />
+                                </div>
+                            </Card>
+                        ))}
+                        <button
+                            type="button"
+                            onClick={() => addPagItem({
+                                xNome:     empresa.razaoSocial ?? '',
+                                doc:       empresa.cnpj?.replace(/\D/g, '') ?? '',
+                                chPix:     getValues('condCpf')?.replace(/\D/g, '') ?? '',
+                                indPag:    '0',
+                                tpComp:    '99',
+                                vContrato: '',
+                            })}
+                            className="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-200 text-sm text-slate-500 hover:border-sky-300 hover:text-sky-600 transition-colors"
+                        >
+                            + Adicionar Pagador
+                        </button>
+                    </TabsContent>
                 </Tabs>
 
                 {/* Erro */}
@@ -1764,10 +2107,17 @@ export default function EmitirMdfePage() {
                     </div>
                 )}
 
+                {/* Banner de visualização (status finalizado) */}
+                {loadedStatus && ['autorizado', 'encerrado', 'cancelado'].includes(loadedStatus) && (
+                    <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800 flex items-center gap-2">
+                        <span className="font-semibold">Visualização:</span> este MDF-e está com status <b>{loadedStatus}</b> e não pode ser re-emitido. Os dados são exibidos somente para consulta.
+                    </div>
+                )}
+
                 {/* Ações */}
                 <div className="flex gap-3 pb-8 flex-wrap">
-                    {status !== 'success' && (
-                        <Button onClick={handleSubmit(onSubmit)} disabled={status === 'loading'} className="gap-2">
+                    {status !== 'success' && !['autorizado', 'encerrado', 'cancelado'].includes(loadedStatus ?? '') && (
+                        <Button onClick={handleSubmit(onSubmit, (errs) => { console.error('MDFE_FORM_VALIDATION_ERRORS =>', errs); toast.error('Preencha os campos obrigatórios', { description: 'Verifique os campos destacados.' }) })} disabled={status === 'loading'} className="gap-2">
                             {status === 'loading' && (
                                 <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
                             )}
@@ -1782,10 +2132,12 @@ export default function EmitirMdfePage() {
                             Imprimir DAMDFE
                         </Button>
                     )}
-                    <Button variant="outline" onClick={handleSalvar} disabled={status === 'loading' || status === 'success'}>
-                        Salvar rascunho
-                    </Button>
-                    <Link href="/mdfe"><Button variant="ghost">Cancelar</Button></Link>
+                    {!['autorizado', 'encerrado', 'cancelado'].includes(loadedStatus ?? '') && (
+                        <Button variant="outline" onClick={handleSalvar} disabled={status === 'loading' || status === 'success'}>
+                            Salvar rascunho
+                        </Button>
+                    )}
+                    <Link href="/mdfe"><Button variant="ghost">Voltar</Button></Link>
                 </div>
             </div>
         </main>

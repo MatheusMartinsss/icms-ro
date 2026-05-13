@@ -48,6 +48,16 @@ export interface PropVeiculo {
     uf?:    string
 }
 
+export interface ProdPred {
+    tpCarga: string
+    xProd:   string
+    ncm?:    string
+    infLotacao?: {
+        cepCarrega?:    string
+        cepDescarrega?: string
+    }
+}
+
 export interface VeicTracao {
     placa:   string
     tpRod:   string
@@ -59,6 +69,7 @@ export interface VeicTracao {
     cInt?:   string
     renavam?: string
     prop?:   PropVeiculo
+    prodPred?: ProdPred
 }
 
 export interface VeicReboque {
@@ -96,15 +107,40 @@ export interface BuildTotOpts {
     cUnid: '01' | '02'   // 01=KG, 02=TON
 }
 
+export interface InfPag {
+    xNome:     string
+    cnpj?:     string
+    cpf?:      string
+    chPix?:    string
+    indPag:    '0' | '1'
+    vContrato: number
+    comp:      Array<{ tpComp: string; vComp: number }>
+}
+
+export interface SegCarga {
+    respSeg: '1' | '2'
+    cnpj?: string
+    cpf?: string
+    infSeg?: {
+        xSeg: string
+        cnpj?: string
+    }
+    nApol?: string
+    nAver?: string[]
+}
+
 export class MdfeBuilder {
     private ambiente: Ambiente = 'producao'
     private ide: any = {}
     private emit: any = {}
     private rodo: any = {}
     private condutores: Condutor[] = []
+    private contratantes: Array<{ cnpj?: string; cpf?: string; xNome?: string }> = []
     private ctes: CteSelecionado[] = []
     private tot: any = {}
     private infAdic: any = {}
+    private seg: SegCarga | null = null
+    private pags: InfPag[] = []
 
     constructor(private empresa: EmpresaConfig) {}
 
@@ -155,7 +191,7 @@ export class MdfeBuilder {
         return this
     }
 
-    buildRodo(veic: VeicTracao, reboque?: VeicReboque[]) {
+    buildRodo(veic: VeicTracao, prodPred?: ProdPred, reboque?: VeicReboque[]) {
         const buildProp = (p: PropVeiculo) => omitNil({
             ...omitNil({ CPF: p.cpf?.replace(/\D/g, '') || undefined, CNPJ: p.cnpj?.replace(/\D/g, '') || undefined }),
             RNTRC:  p.rntrc,
@@ -169,6 +205,12 @@ export class MdfeBuilder {
             infANTT: {
                 RNTRC: this.empresa.rntrc ?? '',
             },
+            ...(prodPred ? { prodPred: {
+                tpCarga: prodPred.tpCarga,
+                xProd:   prodPred.xProd,
+                ...(prodPred.ncm ? { NCM: prodPred.ncm } : {}),
+                ...(prodPred.infLotacao ? { infLotacao: prodPred.infLotacao } : {}),
+            }} : {}),
             veicTracao: omitNil({
                 cInt:    veic.cInt || '01',
                 placa:   veic.placa.replace(/[^A-Z0-9]/gi, '').toUpperCase(),
@@ -179,11 +221,8 @@ export class MdfeBuilder {
                 capKG:   veic.capKG || undefined,
                 capM3:   veic.capM3 || undefined,
                 RENAVAM: veic.renavam || undefined,
-                condutor: this.condutores.map(c => ({
-                    xNome: c.xNome,
-                    CPF:   c.cpf.replace(/\D/g, ''),
-                })),
                 prop: veic.prop ? buildProp(veic.prop) : undefined,
+                // condutores são adicionados em build() após addCondutor()
             }),
             ...(reboque?.length ? {
                 veicReboque: reboque.map(r => omitNil({
@@ -204,6 +243,11 @@ export class MdfeBuilder {
 
     addCondutor(c: Condutor) {
         this.condutores.push(c)
+        return this
+    }
+
+    addContratante(c: { cnpj?: string; cpf?: string; xNome?: string }) {
+        this.contratantes.push(c)
         return this
     }
 
@@ -229,6 +273,16 @@ export class MdfeBuilder {
         return this
     }
 
+    buildSeg(seg: SegCarga) {
+        this.seg = seg
+        return this
+    }
+
+    buildPag(pags: InfPag[]) {
+        this.pags = pags
+        return this
+    }
+
     /** Agrupa CT-es por município de descarga → infDoc.infMunDescarga */
     private buildInfDoc() {
         const byMun = new Map<string, { xMunDescarga: string; ctes: string[] }>()
@@ -250,15 +304,32 @@ export class MdfeBuilder {
         if (!this.condutores.length) throw new Error('Pelo menos um condutor é obrigatório')
         if (!this.ctes.length) throw new Error('Pelo menos um CT-e é obrigatório')
 
+        const rodo = {
+            ...this.rodo,
+            infANTT: {
+                ...this.rodo.infANTT,
+                ...(this.contratantes.length ? { infContratante: this.contratantes } : {}),
+            },
+            ...(this.pags.length ? { infPag: this.pags } : {}),
+            veicTracao: {
+                ...this.rodo.veicTracao,
+                condutor: this.condutores.map(c => ({
+                    xNome: c.xNome,
+                    CPF:   c.cpf.replace(/\D/g, ''),
+                })),
+            },
+        }
+
         const infMDFe = {
             versao: '3.00',
             ide: this.ide,
             emit: this.emit,
             infModal: {
                 versaoModal: '3.00',
-                rodo: this.rodo,
+                rodo,
             },
             infDoc: this.buildInfDoc(),
+            ...(this.seg ? { seg: this.seg } : {}),
             tot: this.tot,
             ...(Object.keys(this.infAdic).length ? { infAdic: this.infAdic } : {}),
         }

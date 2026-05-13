@@ -251,10 +251,10 @@ export function ConfiguracoesEmpresa() {
                 </Button>
             </div>
 
-            {/* Linha 1: Identificação + Emissão CT-e */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Linha 1: Identificação + Emissão CT-e + Emissão MDF-e */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
 
-                {/* Identificação — ocupa 2/3 */}
+                {/* Identificação — ocupa 2/4 */}
                 <div className="lg:col-span-2 bg-white rounded-2xl border p-6 shadow-sm space-y-4">
                     <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Identificação</h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -323,7 +323,7 @@ export function ConfiguracoesEmpresa() {
                     </div>
                 </div>
 
-                {/* Emissão CT-e — ocupa 1/3 */}
+                {/* Emissão CT-e — ocupa 1/4 */}
                 <div className="bg-white rounded-2xl border p-6 shadow-sm space-y-4">
                     <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Emissão CT-e</h3>
                     <div className="space-y-4">
@@ -335,7 +335,7 @@ export function ConfiguracoesEmpresa() {
                             <p className="text-[11px] text-slate-400 mt-1">Incrementado automaticamente</p>
                         </div>
                         <div>
-                            <Label htmlFor="serie">Série</Label>
+                            <Label htmlFor="serie">Série CT-e</Label>
                             <Input id="serie" type="number" min={1} max={999} className="mt-1 font-mono"
                                 value={config.serie}
                                 onChange={e => set('serie', Math.max(1, parseInt(e.target.value) || 99))} />
@@ -352,6 +352,27 @@ export function ConfiguracoesEmpresa() {
                             <Input id="cMunEnv" value={config.cMunEnv} className="mt-1 font-mono"
                                 onChange={e => set('cMunEnv', unmask(e.target.value))}
                                 placeholder="1100452" maxLength={7} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Emissão MDF-e — ocupa 1/4 */}
+                <div className="bg-white rounded-2xl border p-6 shadow-sm space-y-4">
+                    <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Emissão MDF-e</h3>
+                    <div className="space-y-4">
+                        <div>
+                            <Label htmlFor="sequenciaMdfe">Próximo nº MDF-e</Label>
+                            <Input id="sequenciaMdfe" type="number" min={1} className="mt-1 font-mono"
+                                value={config.sequenciaMdfe}
+                                onChange={e => set('sequenciaMdfe', Math.max(1, parseInt(e.target.value) || 1))} />
+                            <p className="text-[11px] text-slate-400 mt-1">Incrementado automaticamente</p>
+                        </div>
+                        <div>
+                            <Label htmlFor="serieMdfe">Série MDF-e</Label>
+                            <Input id="serieMdfe" type="number" min={1} max={999} className="mt-1 font-mono"
+                                value={config.serieMdfe}
+                                onChange={e => set('serieMdfe', Math.max(1, parseInt(e.target.value) || 1))} />
+                            <p className="text-[11px] text-slate-400 mt-1">Padrão: 1</p>
                         </div>
                     </div>
                 </div>

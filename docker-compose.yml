@@ -1,0 +1,10 @@
+services:
+  app:
+    image: ${REGISTRY_HOST}/icms-ro:latest
+    container_name: icms-ro
+    restart: unless-stopped
+    env_file: .env.production
+    ports:
+      - "3000:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
