@@ -60,6 +60,7 @@ export const CTE_CFOPS = [
     { code: '6356', natOp: 'Prestação de serviço de transporte a estabelecimento de produtor rural' },
     { code: '6357', natOp: 'Prestação de serviço de transporte a não contribuinte' },
     { code: '6359', natOp: 'Prestação de serviço de transporte a contribuinte ou a não contribuinte quando o tomador for o remetente ou destinatário da mercadoria' },
+    { code: '6932', natOp: 'Prestação de serviço fora da sede da transportadora' },
     // ── Exportação (7xxx) ────────────────────────────────────────────
     { code: '7358', natOp: 'Prestação de serviço de transporte' },
 ] as const
