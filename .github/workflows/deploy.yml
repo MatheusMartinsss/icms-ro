@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: [master]
+    branches: [feat/nuvemFiscal]
 
 jobs:
   # ── 1. Build e push para o registry próprio ───────────────────────────────
