@@ -40,6 +40,9 @@ jobs:
           cache-to:   type=gha,mode=max
           build-args: |
             DATABASE_URL=postgresql://x:x@localhost/x
+            NEXT_PUBLIC_GOOGLE_API_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_API_KEY }}
+            NEXT_PUBLIC_GOOGLE_API_URL=${{ secrets.NEXT_PUBLIC_GOOGLE_API_URL }}
+            NEXT_PUBLIC_DARE_API_URL=${{ secrets.NEXT_PUBLIC_DARE_API_URL }}
 
   # ── 2. Deploy no VPS ──────────────────────────────────────────────────────
   deploy:
