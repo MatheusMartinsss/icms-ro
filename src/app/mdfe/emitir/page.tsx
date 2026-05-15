@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+
+import { Suspense, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useForm, Controller, useFieldArray } from 'react-hook-form'
@@ -165,8 +166,10 @@ const TP_CARGA = [
     { value: '11', label: 'Perigosa (carga geral)' },
 ]
 
-function defaultProp() {
-    return { cpfCnpj: 'cpf' as const, cpf: '', cnpj: '', rntrc: '', xNome: '', ie: '', uf: '', tpProp: '0' }
+type PropForm = { cpfCnpj: 'cpf' | 'cnpj'; cpf: string; cnpj: string; rntrc: string; xNome: string; ie: string; uf: string; tpProp: string }
+
+function defaultProp(): PropForm {
+    return { cpfCnpj: 'cpf', cpf: '', cnpj: '', rntrc: '', xNome: '', ie: '', uf: '', tpProp: '0' }
 }
 
 function todayStr() { return new Date().toISOString().slice(0, 10) }
@@ -913,7 +916,7 @@ function ProprietarioInput({ value, onChange, onSelect, error }: {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function EmitirMdfePage() {
+function EmitirMdfePage() {
     const searchParams = useSearchParams()
     const { config: empresa } = useEmpresaConfig()
 
@@ -2143,3 +2146,5 @@ export default function EmitirMdfePage() {
         </main>
     )
 }
+
+export default function Page() { return <Suspense fallback={null}><EmitirMdfePage /></Suspense> }

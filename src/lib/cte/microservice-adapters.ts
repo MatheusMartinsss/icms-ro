@@ -19,8 +19,7 @@ export function adaptToMicroservice(infCte: any, empresa: any): Record<string, a
 }
 
 export function adaptIde(ide: any): Record<string, any> {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { mod, cDV, toma3, toma4, ...rest } = ide
+    const { mod: _mod, cDV: _cDV, toma3, toma4, ...rest } = ide
     const toma = toma4 ?? toma3 ?? { toma: 3 }
     return { ...rest, modal: Number(rest.modal), toma }
 }

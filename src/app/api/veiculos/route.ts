@@ -48,7 +48,6 @@ export async function POST(req: Request) {
 
 function buildData(body: any, placa: string) {
     return {
-        placa,
         renavam:       body.renavam        || null,
         tara:          Number(body.tara)   || 0,
         capKG:         body.capKG          ? Number(body.capKG)  : null,
