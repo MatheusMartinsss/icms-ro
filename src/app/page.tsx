@@ -146,6 +146,7 @@ export default function Home() {
   const [pesoTotalCarga, setPesoTotalCarga] = useState<string>('');
   const [rateioPorPeso, setRateioPorPeso] = useState<boolean>(false)
   const [pesoTotalCargaGeral, setPesoTotalCargaGeral] = useState<string>('');
+  const [baseManual, setBaseManual] = useState<string>('');
   const [nfe, setNfe] = useState<ParsedNfe | null>(null)
   const [resultado, setResultado] = useState<Resultado>({ base: 0, icms: 0, icmsReduzido: 0, reducao: 0, ccd: 0, cc: 0 })
 
@@ -279,6 +280,22 @@ export default function Home() {
       icmsReduzido,
       reducao
     })
+    setBaseManual((baseDeCalculoFinal / SCALE).toFixed(2))
+  }
+
+  const ajustarBaseManual = (value: string) => {
+    if (!/^\d*[.,]?\d{0,2}$/.test(value)) return;
+    setBaseManual(value);
+
+    const baseReais = Number(value.replace(',', '.'));
+    if (!value || Number.isNaN(baseReais)) return;
+
+    const baseDeCalculoFinal = Math.round(baseReais * SCALE);
+    const icms = Math.round(baseDeCalculoFinal * 0.12);
+    const reducao = Math.round(icms * 0.20);
+    const icmsReduzido = icms - reducao;
+
+    setResultado((prev) => ({ ...prev, base: baseDeCalculoFinal, icms, reducao, icmsReduzido }));
   }
 
   const sumValueFracionado = () => {
@@ -693,8 +710,13 @@ export default function Home() {
                   <div>
                     <h3 className="text-sm text-slate-500">Resultado</h3>
                     <div className="mt-3">
-                      <div className="text-xs text-slate-400">Frete mínimo</div>
-                      <div className="text-3xl font-semibold">{formatReais(resultado.base)}</div>
+                      <Label htmlFor="baseManual" className="text-xs text-slate-400">Base de Cálculo (R$) — ajustável</Label>
+                      <Input
+                        id="baseManual"
+                        className="text-3xl font-semibold h-auto py-1 px-2"
+                        value={baseManual}
+                        onChange={(e) => ajustarBaseManual(e.target.value)}
+                      />
                     </div>
                   </div>
                   <div className="pt-2 border-t">
