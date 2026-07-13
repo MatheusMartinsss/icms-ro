@@ -144,6 +144,8 @@ export default function Home() {
   const [eixos, setEixos] = useState<string>('4')
   const [peso, setPeso] = useState<string>('')
   const [pesoTotalCarga, setPesoTotalCarga] = useState<string>('');
+  const [rateioPorPeso, setRateioPorPeso] = useState<boolean>(false)
+  const [pesoTotalCargaGeral, setPesoTotalCargaGeral] = useState<string>('');
   const [nfe, setNfe] = useState<ParsedNfe | null>(null)
   const [resultado, setResultado] = useState<Resultado>({ base: 0, icms: 0, icmsReduzido: 0, reducao: 0, ccd: 0, cc: 0 })
 
@@ -256,7 +258,15 @@ export default function Home() {
     const { totalInt, ccdInt, ccInt } = baseTotal;
     const totalReais = totalInt / SCALE;
 
-    const baseDeCalculoFinal = Math.round(totalReais * SCALE);
+    let baseDeCalculoFinal: number;
+    if (rateioPorPeso) {
+      const pesoTotalInt = Math.round(Number(pesoTotalCargaGeral));
+      if (!pesoTotalInt) return;
+      const baseProporcionalPeso = totalReais / pesoTotalInt;
+      baseDeCalculoFinal = Math.round(Number(peso) * baseProporcionalPeso * SCALE);
+    } else {
+      baseDeCalculoFinal = Math.round(totalReais * SCALE);
+    }
     const icms = Math.round(baseDeCalculoFinal * 0.12);
     const reducao = Math.round(icms * 0.20);
     const icmsReduzido = icms - reducao;
@@ -384,8 +394,56 @@ export default function Home() {
                     </div>
                     <div>
                       <Label htmlFor="peso">Peso Líquido (KG)</Label>
-                      <Input value={peso} id="peso" disabled placeholder="Ex: 3500" />
+                      <Input
+                        value={peso}
+                        id="peso"
+                        placeholder="Ex: 3500"
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (/^\d*$/.test(value)) {
+                            setPeso(value);
+                          }
+                        }}
+                      />
                     </div>
+
+                    <label className="flex items-center justify-between cursor-pointer w-full">
+                      <span className="text-slate-700 select-none">Esta NFe faz parte de uma carga com outras notas (ratear proporcional ao peso)</span>
+                      <input
+                        type="checkbox"
+                        checked={rateioPorPeso}
+                        onChange={() => setRateioPorPeso((state) => !state)}
+                        className="sr-only"
+                      />
+                      <div
+                        className={`w-6 h-6 flex-shrink-0 rounded-lg border flex items-center justify-center transition-colors duration-200
+                        ${rateioPorPeso ? 'bg-sky-600 border-sky-600' : 'bg-white border-slate-300'}`}
+                      >
+                        {rateioPorPeso && (
+                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </div>
+                    </label>
+
+                    {rateioPorPeso && (
+                      <div>
+                        <Label htmlFor="pesoTotalCargaGeral">Peso Total da Carga (KG)</Label>
+                        <Input
+                          value={pesoTotalCargaGeral}
+                          id="pesoTotalCargaGeral"
+                          placeholder="Ex: 10000"
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (/^\d*$/.test(value)) {
+                              setPesoTotalCargaGeral(value);
+                            }
+                          }}
+                        />
+                        <p className="text-xs text-slate-400 mt-1">Peso total de todas as NFes da carga (o imposto será calculado proporcional ao peso desta NFe)</p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -442,7 +500,17 @@ export default function Home() {
 
                     <div>
                       <Label htmlFor="pesoTotalCarga">Peso Total da Carga (KG)</Label>
-                      <Input value={pesoTotalCarga} id="pesoTotalCarga" disabled placeholder="Ex: 3500" />
+                      <Input
+                        value={pesoTotalCarga}
+                        id="pesoTotalCarga"
+                        placeholder="Ex: 3500"
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (/^\d*$/.test(value)) {
+                            setPesoTotalCarga(value);
+                          }
+                        }}
+                      />
                     </div>
                   </div>
                 )}
