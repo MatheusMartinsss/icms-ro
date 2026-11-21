@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { registrarEvento } from '@/lib/analytics'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -170,8 +171,10 @@ export default function GerarDar({ produto, periodo, periodoOk, quantidade, guia
       registrarGuia({ ...base, status: 'EMITIDO', valorIcms: valor, linhaDigitavel, erro: null })
       setGeradas(atual => [{ codigo: guia.codigo, descricao: guia.descricao, valor, linhaDigitavel }, ...atual])
       toast.success(`DAR ${guia.codigo} gerado. O PDF foi baixado.`)
+      registrarEvento('dar-fethab-emitido', { receita: guia.codigo })
     } catch (error) {
       const mensagem = error instanceof TypeError ? 'Sem conexão com o servidor' : (error as Error).message
+      registrarEvento('dar-fethab-erro', { receita: guia.codigo })
       registrarGuia({ ...base, status: 'ERRO', valorIcms: guia.total, linhaDigitavel: null, erro: mensagem })
       toast.error(mensagem, { duration: 10_000 })
     } finally {

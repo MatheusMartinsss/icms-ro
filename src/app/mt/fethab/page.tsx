@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { registrarEvento } from '@/lib/analytics'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -93,6 +94,7 @@ export default function FethabPage() {
     if (detectados[0]) {
       usarDetectado(detectados[0])
       toast.success(novas.length === 1 ? 'NF-e carregada' : `${novas.length} NF-e carregadas`)
+      registrarEvento('fethab-nfe-importada', { quantidade: novas.length })
     } else {
       toast.warning('Nenhum produto do FETHAB foi encontrado nas notas.')
     }

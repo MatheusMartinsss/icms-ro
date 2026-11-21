@@ -2,6 +2,7 @@
 
 import React, { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { registrarEvento } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -430,8 +431,10 @@ export default function IcmsFretePage() {
         });
         if (result.ok) {
           toast.success(`DARE da NF ${item.numero} emitido`, { id: toastId });
+          registrarEvento("dare-ro-emitido", { origem: "nfe" });
         } else {
           falhas.push(item.numero);
+          registrarEvento("dare-ro-erro", { origem: "nfe" });
           toast.error(`NF ${item.numero}: ${result.error}`, { id: toastId, duration: 15000 });
         }
       }
@@ -454,6 +457,7 @@ export default function IcmsFretePage() {
     try {
       await navigator.clipboard.writeText(textoBaseCalculo(resultado, parametros));
       toast.success("Resultado copiado");
+      registrarEvento("icms-ro-copiado");
     } catch {
       toast.error("Não foi possível copiar");
     }

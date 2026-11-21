@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils"
 import { Inter as FontSans } from "next/font/google"
 import Providers from "@/components/providers";
 import Navbar from "@/components/navbar";
+import Script from "next/script";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -30,6 +31,13 @@ export default function RootLayout({
           <Navbar />
           {children}
         </Providers>
+        {/* Umami (sem cookies). data-domains: não conta acessos locais. */}
+        <Script
+          src="/u/script.js"
+          data-website-id="248646f6-d5fa-44a6-897a-6ce8fd2153a0"
+          data-domains="geraguia.com.br,www.geraguia.com.br"
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   );

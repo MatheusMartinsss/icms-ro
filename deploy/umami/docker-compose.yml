@@ -1,0 +1,55 @@
+# Umami (analytics sem cookies) do GeraGuia. Fica em /opt/umami na VPS, fora do
+# deploy do site. O .env ao lado tem UMAMI_DB_PASSWORD e UMAMI_APP_SECRET.
+#
+# O script de coleta é servido pelo próprio geraguia.com.br em /u/ (ver
+# deploy/nginx/geraguia.com.br.conf). O painel fica em 127.0.0.1:3070.
+name: umami
+
+services:
+  umami:
+    image: ghcr.io/umami-software/umami:3.4.1
+    container_name: umami
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3070:3000"
+    environment:
+      DATABASE_URL: postgresql://umami:${UMAMI_DB_PASSWORD}@umami-db:5432/umami
+      APP_SECRET: ${UMAMI_APP_SECRET}
+      DISABLE_TELEMETRY: "1"
+      DISABLE_UPDATES: "1"
+    depends_on:
+      umami-db:
+        condition: service_healthy
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:3000/api/heartbeat || wget -qO- http://localhost:3000/api/heartbeat"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  umami-db:
+    image: postgres:16-alpine
+    container_name: umami-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: umami
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: ${UMAMI_DB_PASSWORD}
+    volumes:
+      - umami-db:/var/lib/postgresql/data
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami -d umami"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  umami-db:

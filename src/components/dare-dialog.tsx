@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { registrarEvento } from '@/lib/analytics'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -102,9 +103,11 @@ export default function DareDialog({ open, onOpenChange, inicial, onEmitido }: P
     if (!result.ok) {
       setErro(result.error)
       toast.error(`DARE da NF ${campos.notaFiscal} não foi emitido`, { description: result.error })
+      registrarEvento('dare-ro-erro', { origem: 'manual' })
       return
     }
     toast.success(`DARE da NF ${campos.notaFiscal} emitido`)
+    registrarEvento('dare-ro-emitido', { origem: 'manual' })
     onEmitido?.()
     onOpenChange(false)
   }
