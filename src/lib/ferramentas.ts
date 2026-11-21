@@ -4,7 +4,7 @@ export type StatusFerramenta = 'disponivel' | 'novo' | 'em-breve'
 
 export interface Ferramenta {
   // Só as ferramentas que já geram guia têm id de histórico.
-  id: FerramentaId | 'icms-nota-ro' | 'piso-minimo-frete'
+  id: FerramentaId | 'icms-nota-ro' | 'piso-minimo-frete' | 'cubagem-madeira'
   uf: 'BR' | 'RO' | 'MT'
   titulo: string
   guia: string
@@ -30,6 +30,16 @@ export const FERRAMENTAS: Ferramenta[] = [
     descricao: 'Calcula o piso mínimo do frete rodoviário pela tabela da ANTT: tipo de carga, eixos, distância e retorno vazio.',
     quemUsa: 'Transportadoras e embarcadores',
     href: '/piso-minimo-frete',
+    status: 'novo',
+  },
+  {
+    id: 'cubagem-madeira',
+    uf: 'BR',
+    titulo: 'Cubagem de madeira',
+    guia: 'Tora e serrada · m³',
+    descricao: 'Volume de toras pelo geométrico ou Francon e de madeira serrada em cm ou polegadas, com romaneio, total e valor da carga.',
+    quemUsa: 'Madeireiras e serrarias',
+    href: '/cubagem-madeira',
     status: 'novo',
   },
   {

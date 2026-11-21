@@ -4,7 +4,7 @@ import { PAGINAS_CONTEUDO } from '@/lib/site'
 
 export default function Rodape() {
   return (
-    <footer className="mt-16 border-t bg-white">
+    <footer className="mt-16 border-t bg-white print:hidden">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 grid gap-8 sm:grid-cols-3 text-sm">
         <div>
           <div className="font-semibold">GeraGuia</div>

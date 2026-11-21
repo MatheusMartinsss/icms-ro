@@ -72,7 +72,7 @@ export default function Navbar() {
   const { ativas, ativa, setAtivaId, carregando } = useTransportadoras()
 
   return (
-    <header className="bg-white border-b">
+    <header className="bg-white border-b print:hidden">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center gap-x-6 gap-y-3">
         <Link href="/" className="flex items-center gap-2">
           <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white font-bold">

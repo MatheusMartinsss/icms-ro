@@ -13,6 +13,12 @@ export interface PaginaConteudo {
 // Páginas de tabela e passo a passo. A home, o rodapé e o sitemap leem daqui.
 export const PAGINAS_CONTEUDO: PaginaConteudo[] = [
   {
+    href: '/cubagem-madeira/como-calcular',
+    titulo: 'Como calcular a cubagem de madeira',
+    resumo: 'Fórmulas do método geométrico (Smalian), do Francon e da madeira serrada, com exemplos, romaneio e rendimento tora → serrada.',
+    atualizado: '2026-11-21',
+  },
+  {
     href: '/piso-minimo-frete/tabela',
     titulo: 'Tabela de frete ANTT 2026: pisos mínimos A, B, C e D',
     resumo: 'Coeficientes CCD e CC dos 12 tipos de carga, de 2 a 9 eixos, com a fórmula e um exemplo com retorno vazio.',
