@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { FERRAMENTAS, disponivel } from '@/lib/ferramentas'
+import { FERRAMENTAS, disponivel, nomeFerramenta } from '@/lib/ferramentas'
 import { PAGINAS_CONTEUDO } from '@/lib/site'
 
 export default function Rodape() {
@@ -17,7 +17,7 @@ export default function Rodape() {
           <div className="font-semibold">Ferramentas</div>
           <ul className="mt-2 space-y-1">
             {FERRAMENTAS.filter(disponivel).map(f => (
-              <li key={f.id}><Link href={f.href} className="text-slate-600 hover:text-sky-700">{f.titulo} {f.uf}</Link></li>
+              <li key={f.id}><Link href={f.href} className="text-slate-600 hover:text-sky-700">{nomeFerramenta(f)}</Link></li>
             ))}
           </ul>
         </nav>

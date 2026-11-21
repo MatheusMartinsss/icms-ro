@@ -4,8 +4,8 @@ export type StatusFerramenta = 'disponivel' | 'novo' | 'em-breve'
 
 export interface Ferramenta {
   // Só as ferramentas que já geram guia têm id de histórico.
-  id: FerramentaId | 'icms-nota-ro'
-  uf: 'RO' | 'MT'
+  id: FerramentaId | 'icms-nota-ro' | 'piso-minimo-frete'
+  uf: 'BR' | 'RO' | 'MT'
   titulo: string
   guia: string
   descricao: string
@@ -15,12 +15,23 @@ export interface Ferramenta {
 }
 
 export const ESTADOS: Record<Ferramenta['uf'], string> = {
+  BR: 'Todo o Brasil',
   RO: 'Rondônia',
   MT: 'Mato Grosso',
 }
 
 // Catálogo do site. A home, o menu e o histórico leem daqui.
 export const FERRAMENTAS: Ferramenta[] = [
+  {
+    id: 'piso-minimo-frete',
+    uf: 'BR',
+    titulo: 'Piso mínimo de frete',
+    guia: 'Tabelas A a D · ANTT 2026',
+    descricao: 'Calcula o piso mínimo do frete rodoviário pela tabela da ANTT: tipo de carga, eixos, distância e retorno vazio.',
+    quemUsa: 'Transportadoras e embarcadores',
+    href: '/piso-minimo-frete',
+    status: 'novo',
+  },
   {
     id: 'icms-frete-ro',
     uf: 'RO',
@@ -55,6 +66,9 @@ export const FERRAMENTAS: Ferramenta[] = [
 
 export const ferramentaPorId = (id: string | undefined) =>
   FERRAMENTAS.find(f => f.id === (id ?? 'icms-frete-ro'))
+
+// Nome com a UF ("ICMS Frete RO"); as ferramentas nacionais ficam só com o título.
+export const nomeFerramenta = (f: Ferramenta) => (f.uf === 'BR' ? f.titulo : `${f.titulo} ${f.uf}`)
 
 export const disponivel = (f: Ferramenta) => f.status !== 'em-breve'
 

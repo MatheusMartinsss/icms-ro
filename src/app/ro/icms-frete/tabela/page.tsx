@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { Artigo, Chamada, Secao, TabelaRolavel } from '@/components/conteudo'
 import { PARAMETROS_PADRAO, SCALE, TIPOS_CARGA, calcularBaseTotal, calcularIcms, eixosDisponiveis, formatPercent, formatReais } from '@/lib/calculo'
 import { metadataPagina } from '@/lib/site'
@@ -120,7 +121,8 @@ export default function Page() {
         <TabelaCoeficientes campo="ccInt" legenda="Coeficiente CC por tipo de carga e eixos" />
         <p className="text-sm text-slate-500">
           “—” indica que a tabela não tem coeficiente para aquele número de eixos naquele tipo de carga.
-          Fonte: tabela de pisos mínimos de frete da ANTT, Portaria SUROC nº 22/2026.
+          Fonte: tabela de pisos mínimos de frete da ANTT, Portaria SUROC nº 22/2026 (tabela A). As tabelas B, C e D
+          estão na <Link href="/piso-minimo-frete/tabela" className="text-sky-700 hover:underline">tabela de frete ANTT 2026</Link>.
         </p>
       </Secao>
 

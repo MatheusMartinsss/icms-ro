@@ -1,4 +1,4 @@
-import Indice from '@/app/indice.json'
+import Piso from '@/app/piso-antt.json'
 
 // Valores monetários internos em 1/10000 de real, como a calculadora já fazia,
 // para não acumular erro de ponto flutuante.
@@ -20,7 +20,8 @@ export const TIPOS_CARGA: { value: string; label: string }[] = [
 ]
 
 type Coeficientes = Record<string, number>
-const tabela = Indice as { tipo: string; coeficientes: { ccd: Coeficientes; cc: Coeficientes } }[]
+// Tabela A da ANTT (carga lotação), a mesma da pauta do ICMS frete de RO.
+const tabela = Piso.tabelas.A as { tipo: string; coeficientes: { ccd: Coeficientes; cc: Coeficientes } }[]
 
 // Só oferece as quantidades de eixos que existem na tabela da ANTT para o
 // tipo de carga. Antes a tela mostrava "8 eixos", que não tem coeficiente.

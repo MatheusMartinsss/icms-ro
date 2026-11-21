@@ -52,7 +52,7 @@ export default function Home() {
         {porEstado.map(({ uf, ferramentas }) => (
           <section key={uf}>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
-              {ESTADOS[uf]} <span className="text-slate-400">· {uf}</span>
+              {ESTADOS[uf]}{uf !== 'BR' && <span className="text-slate-400"> · {uf}</span>}
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {ferramentas.map(f => <CardFerramenta key={f.id} f={f} />)}

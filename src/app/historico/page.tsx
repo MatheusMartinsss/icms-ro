@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import DareDialog, { DareInicial } from '@/components/dare-dialog'
 import { useTransportadoras } from '@/components/transportadora-context'
-import { FERRAMENTAS, ferramentaPorId } from '@/lib/ferramentas'
+import { FERRAMENTAS, ferramentaPorId, nomeFerramenta } from '@/lib/ferramentas'
 import type { DareRegistro, DareStatus } from '@/lib/types'
 
 const STATUS_LABEL: Record<DareStatus, { label: string; className: string }> = {
@@ -98,7 +98,7 @@ export default function HistoricoPage() {
             <SelectContent>
               <SelectItem value={TODAS}>Todas as ferramentas</SelectItem>
               {ferramentasNoHistorico.map(f => (
-                <SelectItem key={f.id} value={f.id}>{f.titulo} {f.uf}</SelectItem>
+                <SelectItem key={f.id} value={f.id}>{nomeFerramenta(f)}</SelectItem>
               ))}
             </SelectContent>
           </Select>

@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useTransportadoras } from '@/components/transportadora-context'
 import { formatCnpj } from '@/lib/cnpj'
-import { ESTADOS, FERRAMENTAS, STATUS_LABEL, disponivel, type Ferramenta } from '@/lib/ferramentas'
+import { ESTADOS, FERRAMENTAS, STATUS_LABEL, disponivel, nomeFerramenta, type Ferramenta } from '@/lib/ferramentas'
 import { cn } from '@/lib/utils'
 
 const LINKS = [
@@ -30,7 +30,7 @@ function MenuFerramentas({ pathname }: { pathname: string }) {
   return (
     <Popover open={aberto} onOpenChange={setAberto}>
       <PopoverTrigger className={cn(linkClasse(!!atual), 'flex items-center gap-1')}>
-        {atual ? `${atual.titulo} ${atual.uf}` : 'Ferramentas'}
+        {atual ? nomeFerramenta(atual) : 'Ferramentas'}
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 p-2">
