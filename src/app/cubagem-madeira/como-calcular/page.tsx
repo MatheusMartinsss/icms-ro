@@ -110,9 +110,19 @@ export default function Page() {
       <Secao titulo="Romaneio">
         <p>
           O romaneio é a lista das toras ou peças de uma carga, com as medidas e o volume de cada linha. O total da carga
-          é a soma das linhas. Nos romaneios de serraria, as peças costumam vir em blocos com a mesma bitola
-          (espessura × largura) e comprimentos variados. Para chegar ao valor, multiplique o total em m³ pelo preço do m³.
+          é a soma das linhas. Para chegar ao valor, multiplique o total em m³ pelo preço do m³.
         </p>
+        <p>Na madeira serrada há dois modelos comuns:</p>
+        <ul className="list-disc space-y-1 pl-5">
+          <li>
+            <strong>Padrão:</strong> um bloco para cada bitola × largura (ex.: 5 × 20 cm), com a quantidade de peças em cada
+            comprimento (1,00 m, 1,50 m, 2,00 m...). Volume da linha = bitola × largura × comprimento × peças.
+          </li>
+          <li>
+            <strong>Largura aberta:</strong> a bitola é fixa, mas cada peça tem a sua largura. Em cada comprimento se anota
+            a largura de peça por peça, e o volume é a soma das peças.
+          </li>
+        </ul>
       </Secao>
 
       <Secao titulo="Rendimento: tora para serrada">

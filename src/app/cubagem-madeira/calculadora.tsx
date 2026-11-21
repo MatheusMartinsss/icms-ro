@@ -1,137 +1,86 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { registrarEvento } from '@/lib/analytics'
+import { CRV_SERRADA, METODOS_TORA, lerNumero, m3, reais } from '@/lib/cubagem'
+import { Alternativa, Num } from './campos'
+import { FormLargura } from './form-largura'
+import { FormLivre } from './form-livre'
+import { FormPadrao } from './form-padrao'
+import { FormToras } from './form-toras'
 import {
-  CRV_SERRADA, METODOS_TORA, lerNumero, m3, reais, volumeFrancon, volumeSerrada, volumeSmalian,
-  type MetodoTora, type UnidadeSecao,
-} from '@/lib/cubagem'
-import { cn } from '@/lib/utils'
+  aplicarFaixa, comprimentosDaFaixa, estadoInicial, novaLarguraLinha, novaLivreLinha, novaPadraoLinha,
+  novoLarguraBloco, novoPadraoBloco, novoToraBloco, restaurar, resumir, textoRomaneio,
+  type Estado, type Faixa, type LarguraBloco, type LivreLinha, type Modelo, type PadraoBloco, type ToraBloco,
+} from './romaneio'
 
-type Aba = 'tora' | 'serrada'
-
-interface LinhaTora { id: number; d1: string; d2: string; d3: string; d4: string; circ: string; comp: string }
-interface LinhaPeca { id: number; esp: string; larg: string; comp: string; qtd: string }
-
-const CHAVE = 'geraguia:cubagem:v1'
+const CHAVE = 'geraguia:cubagem:v2'
+const CHAVE_V1 = 'geraguia:cubagem:v1'
 const GFLONA_URL = 'https://gflona.com.br/?utm_source=geraguia&utm_medium=referral&utm_campaign=cubagem'
 
-let proximoId = 1
-const novaTora = (): LinhaTora => ({ id: proximoId++, d1: '', d2: '', d3: '', d4: '', circ: '', comp: '' })
-const novaPeca = (base?: LinhaPeca): LinhaPeca => ({ id: proximoId++, esp: base?.esp ?? '', larg: base?.larg ?? '', comp: '', qtd: '' })
-
-const limparNumero = (v: string) => v.replace(/[^\d.,]/g, '').slice(0, 8)
-const texto = (v: unknown) => (typeof v === 'string' ? limparNumero(v) : '')
-
-function Alternativa<T extends string>({ valor, opcoes, onChange, rotulo }: {
-  valor: T
-  opcoes: { valor: T; label: string }[]
-  onChange: (v: T) => void
-  rotulo: string
-}) {
-  return (
-    <div className="flex rounded-md border p-0.5 bg-white" role="group" aria-label={rotulo}>
-      {opcoes.map(o => (
-        <button
-          key={o.valor}
-          type="button"
-          aria-pressed={valor === o.valor}
-          onClick={() => onChange(o.valor)}
-          className={cn('flex-1 px-3 py-1.5 text-sm rounded whitespace-nowrap', valor === o.valor ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100')}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  )
+const MODELOS: Record<Modelo, { label: string; resumo: string }> = {
+  padrao: { label: 'Padrão', resumo: 'Um bloco por bitola × largura; digite a quantidade de peças em cada comprimento.' },
+  largura: { label: 'Largura aberta', resumo: 'Bitola fixa e largura variada: digite a largura de cada peça na linha do comprimento.' },
+  livre: { label: 'Lista livre', resumo: 'Uma linha por lote: espessura × largura × comprimento × peças.' },
 }
 
-function Campo({ rotulo, valor, onChange, onEnter, placeholder, nome }: {
-  rotulo: string
-  valor: string
-  onChange: (v: string) => void
-  onEnter?: () => void
-  placeholder?: string
-  nome: string
-}) {
-  return (
-    <label className="block min-w-0">
-      <span className="block text-[11px] leading-4 text-slate-500 truncate">{rotulo}</span>
-      <Input
-        inputMode="decimal"
-        autoComplete="off"
-        name={nome}
-        placeholder={placeholder}
-        value={valor}
-        onChange={e => onChange(limparNumero(e.target.value))}
-        onKeyDown={e => { if (e.key === 'Enter' && onEnter) { e.preventDefault(); onEnter() } }}
-        className="h-9 px-2 tabular-nums"
+// Romaneio salvo pela versão anterior da calculadora (lista simples).
+function migrarV1(v1: Record<string, unknown>): unknown {
+  return {
+    tipo: v1.aba,
+    metodo: v1.metodo,
+    unidade: v1.unidade,
+    preco: v1.preco,
+    modelo: 'livre',
+    toras: [{ especie: '', preco: '', linhas: v1.toras }],
+    livre: v1.pecas,
+  }
+}
+
+function EditorFaixa({ faixa, onAplicar }: { faixa: Faixa; onAplicar: (f: Faixa) => void }) {
+  const [rasc, setRasc] = useState(faixa)
+  useEffect(() => setRasc(faixa), [faixa])
+  const aplicar = () => {
+    if (rasc.espacamento === faixa.espacamento && rasc.de === faixa.de && rasc.ate === faixa.ate) return
+    if (comprimentosDaFaixa(rasc).length) onAplicar(rasc)
+    else setRasc(faixa)
+  }
+  const campo = (k: keyof Faixa, rotulo: string) => (
+    <label className="w-16 text-[11px] leading-4 text-slate-500">
+      {rotulo}
+      <Num
+        valor={rasc[k]}
+        onValor={v => setRasc(r => ({ ...r, [k]: v }))}
+        onBlur={aplicar}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); aplicar() } }}
       />
     </label>
   )
-}
-
-function Cartao({ titulo, volume, onRemover, podeRemover, children }: {
-  titulo: string
-  volume: number | null
-  onRemover: () => void
-  podeRemover: boolean
-  children: React.ReactNode
-}) {
   return (
-    <div className="rounded-lg border bg-white p-2.5 sm:p-3 break-inside-avoid">
-      <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
-        <span className="font-medium text-slate-500">{titulo}</span>
-        <span className="flex items-center gap-2">
-          <span className={cn('tabular-nums', volume ? 'font-semibold text-slate-900' : 'text-slate-300')}>
-            {volume ? `${m3(volume)} m³` : '— m³'}
-          </span>
-          {podeRemover && (
-            <button type="button" onClick={onRemover} aria-label={`Remover ${titulo.toLowerCase()}`} className="rounded px-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 print:hidden">
-              ✕
-            </button>
-          )}
-        </span>
-      </div>
-      {children}
+    <div className="flex flex-wrap items-end gap-2">
+      {campo('de', 'De (m)')}
+      {campo('ate', 'Até (m)')}
+      {campo('espacamento', 'A cada (m)')}
+      <span className="pb-2 text-xs text-slate-400">{comprimentosDaFaixa(faixa).length} comprimentos por bloco</span>
     </div>
   )
 }
 
 export function Calculadora() {
-  const [aba, setAba] = useState<Aba>('tora')
-  const [metodo, setMetodo] = useState<MetodoTora>('smalian')
-  const [unidade, setUnidade] = useState<UnidadeSecao>('cm')
-  const [toras, setToras] = useState<LinhaTora[]>(() => [novaTora()])
-  const [pecas, setPecas] = useState<LinhaPeca[]>(() => [novaPeca()])
-  const [preco, setPreco] = useState('')
+  const [e, setEstado] = useState<Estado>(estadoInicial)
   const [copiado, setCopiado] = useState(false)
   const [carregado, setCarregado] = useState(false)
-  const focarUltima = useRef(false)
-  const lista = useRef<HTMLDivElement>(null)
 
   // Restaura o último romaneio deste navegador (só conveniência; pode falhar em aba anônima).
   useEffect(() => {
     try {
-      const salvo = JSON.parse(localStorage.getItem(CHAVE) ?? 'null')
-      if (salvo && typeof salvo === 'object') {
-        if (salvo.aba === 'tora' || salvo.aba === 'serrada') setAba(salvo.aba)
-        if (salvo.metodo === 'smalian' || salvo.metodo === 'francon') setMetodo(salvo.metodo)
-        if (salvo.unidade === 'cm' || salvo.unidade === 'pol') setUnidade(salvo.unidade)
-        if (Array.isArray(salvo.toras) && salvo.toras.length) {
-          setToras(salvo.toras.slice(0, 500).map((t: Record<string, unknown>) => ({
-            id: proximoId++, d1: texto(t.d1), d2: texto(t.d2), d3: texto(t.d3), d4: texto(t.d4), circ: texto(t.circ), comp: texto(t.comp),
-          })))
-        }
-        if (Array.isArray(salvo.pecas) && salvo.pecas.length) {
-          setPecas(salvo.pecas.slice(0, 500).map((p: Record<string, unknown>) => ({
-            id: proximoId++, esp: texto(p.esp), larg: texto(p.larg), comp: texto(p.comp), qtd: texto(p.qtd).replace(/\D/g, ''),
-          })))
-        }
-        if (typeof salvo.preco === 'string') setPreco(salvo.preco.slice(0, 14))
-      }
+      const salvo = localStorage.getItem(CHAVE)
+      const v1 = salvo ? null : localStorage.getItem(CHAVE_V1)
+      const bruto = salvo ? JSON.parse(salvo) : v1 ? migrarV1(JSON.parse(v1) ?? {}) : null
+      const r = restaurar(bruto)
+      if (r) setEstado(r)
     } catch {
       // sem armazenamento: começa vazio
     }
@@ -140,101 +89,61 @@ export function Calculadora() {
 
   useEffect(() => {
     if (!carregado) return
-    try {
-      localStorage.setItem(CHAVE, JSON.stringify({ aba, metodo, unidade, toras, pecas, preco }))
-    } catch {
-      // ignora
-    }
-  }, [carregado, aba, metodo, unidade, toras, pecas, preco])
-
-  const volumesToras = useMemo(() => toras.map(t => {
-    const comp = lerNumero(t.comp)
-    return metodo === 'smalian'
-      ? volumeSmalian({ d1: lerNumero(t.d1), d2: lerNumero(t.d2), d3: lerNumero(t.d3), d4: lerNumero(t.d4) }, comp)
-      : volumeFrancon(lerNumero(t.circ), comp)
-  }), [toras, metodo])
-
-  const volumesPecas = useMemo(
-    () => pecas.map(p => volumeSerrada(lerNumero(p.esp), lerNumero(p.larg), lerNumero(p.comp), lerNumero(p.qtd), unidade)),
-    [pecas, unidade],
-  )
-
-  const volumes = aba === 'tora' ? volumesToras : volumesPecas
-  const validos = volumes.filter((v): v is number => v !== null && v > 0)
-  const total = Math.round(Number((validos.reduce((s, v) => s + v, 0) * 10000).toPrecision(12))) / 10000
-  const quantidade = aba === 'tora'
-    ? validos.length
-    : pecas.reduce((s, p, i) => s + (volumesPecas[i] ? lerNumero(p.qtd) ?? 0 : 0), 0)
-  const valorM3 = lerNumero(preco.replace(/[R$\s]/g, ''))
-  const valorTotal = valorM3 && total ? Math.round(Number((total * valorM3 * 100).toPrecision(12))) / 100 : null
-
-  // Um evento por aba/método quando o romaneio tem resultado.
-  const ultimoEvento = useRef('')
-  useEffect(() => {
-    if (!total) return
-    const chave = `${aba}|${aba === 'tora' ? metodo : unidade}`
     const t = setTimeout(() => {
-      if (chave === ultimoEvento.current) return
-      ultimoEvento.current = chave
-      registrarEvento('cubagem-calculada', { tipo: aba, metodo: aba === 'tora' ? metodo : unidade, linhas: validos.length })
-    }, 2000)
+      try {
+        localStorage.setItem(CHAVE, JSON.stringify(e))
+      } catch {
+        // ignora
+      }
+    }, 400)
     return () => clearTimeout(t)
-  }, [total, aba, metodo, unidade, validos.length])
+  }, [carregado, e])
 
-  useEffect(() => {
-    if (!focarUltima.current) return
-    focarUltima.current = false
-    const linhas = lista.current?.querySelectorAll('[data-linha]')
-    linhas?.[linhas.length - 1]?.querySelector('input')?.focus()
-  }, [toras.length, pecas.length])
+  const mudar = useCallback(<K extends keyof Estado>(k: K, v: Estado[K]) => { setEstado(s => ({ ...s, [k]: v })); setCopiado(false) }, [])
+  const setToras = useCallback((fn: (b: ToraBloco[]) => ToraBloco[]) => setEstado(s => ({ ...s, toras: fn(s.toras) })), [])
+  const setPadrao = useCallback((fn: (b: PadraoBloco[]) => PadraoBloco[]) => setEstado(s => ({ ...s, padrao: fn(s.padrao) })), [])
+  const setLargura = useCallback((fn: (b: LarguraBloco[]) => LarguraBloco[]) => setEstado(s => ({ ...s, largura: fn(s.largura) })), [])
+  const setLivre = useCallback((fn: (l: LivreLinha[]) => LivreLinha[]) => setEstado(s => ({ ...s, livre: fn(s.livre) })), [])
 
-  function adicionar() {
-    focarUltima.current = true
-    if (aba === 'tora') setToras(ts => [...ts, novaTora()])
-    // Item novo repete a bitola do anterior: o romaneio costuma vir em blocos da mesma seção.
-    else setPecas(ps => [...ps, novaPeca(ps[ps.length - 1])])
+  function aplicarNovaFaixa(f: Faixa) {
+    const comps = comprimentosDaFaixa(f)
+    setEstado(s => ({
+      ...s,
+      faixa: f,
+      padrao: s.padrao.map(b => ({ ...b, linhas: aplicarFaixa(b.linhas, comps, c => novaPadraoLinha(c), l => !!l.qtd) })),
+      largura: s.largura.map(b => ({ ...b, linhas: aplicarFaixa(b.linhas, comps, c => novaLarguraLinha(c), l => l.pecas.length > 0) })),
+    }))
   }
 
   function limpar() {
-    if (aba === 'tora') setToras([novaTora()])
-    else setPecas([novaPeca()])
     setCopiado(false)
+    setEstado(s => {
+      if (s.tipo === 'tora') return { ...s, toras: [novoToraBloco()] }
+      if (s.modelo === 'padrao') return { ...s, padrao: [novoPadraoBloco(s.faixa)] }
+      if (s.modelo === 'largura') return { ...s, largura: [novoLarguraBloco(s.faixa)] }
+      return { ...s, livre: [novaLivreLinha()] }
+    })
   }
 
-  const mudarTora = (id: number, campo: keyof LinhaTora, valor: string) =>
-    setToras(ts => ts.map(t => (t.id === id ? { ...t, [campo]: valor } : t)))
-  const mudarPeca = (id: number, campo: keyof LinhaPeca, valor: string) =>
-    setPecas(ps => ps.map(p => (p.id === id ? { ...p, [campo]: valor } : p)))
+  const r = useMemo(() => resumir(e), [e])
+  const variante = e.tipo === 'tora' ? e.metodo : e.modelo
 
-  function textoRomaneio() {
-    const linhas: string[] = []
-    if (aba === 'tora') {
-      linhas.push(`Romaneio de toras · ${METODOS_TORA[metodo].titulo}`)
-      toras.forEach((t, i) => {
-        const v = volumesToras[i]
-        if (!v) return
-        const medidas = metodo === 'smalian'
-          ? `base ${[t.d1, t.d2].filter(Boolean).join('/')} cm, topo ${[t.d3, t.d4].filter(Boolean).join('/')} cm`
-          : `circ. ${t.circ} cm`
-        linhas.push(`${i + 1}. ${medidas}, ${t.comp} m = ${m3(v)} m³`)
-      })
-    } else {
-      linhas.push(`Romaneio de madeira serrada (${unidade === 'cm' ? 'cm' : 'polegadas'})`)
-      pecas.forEach((p, i) => {
-        const v = volumesPecas[i]
-        if (!v) return
-        linhas.push(`${i + 1}. ${p.qtd} pç ${p.esp} × ${p.larg} × ${p.comp} m = ${m3(v)} m³`)
-      })
-    }
-    linhas.push(`Total: ${quantidade} ${aba === 'tora' ? 'toras' : 'peças'}, ${m3(total)} m³`)
-    if (valorTotal && valorM3) linhas.push(`Valor: ${m3(total)} m³ × ${reais(valorM3)} = ${reais(valorTotal)}`)
-    linhas.push('Calculado em geraguia.com.br/cubagem-madeira')
-    return linhas.join('\n')
-  }
+  // Um evento por tipo/variante quando o romaneio tem resultado.
+  const ultimoEvento = useRef('')
+  useEffect(() => {
+    if (!r.volume) return
+    const chave = `${e.tipo}|${variante}`
+    const t = setTimeout(() => {
+      if (chave === ultimoEvento.current) return
+      ultimoEvento.current = chave
+      registrarEvento('cubagem-calculada', { tipo: e.tipo, metodo: variante, linhas: r.linhas })
+    }, 2000)
+    return () => clearTimeout(t)
+  }, [r.volume, r.linhas, e.tipo, variante])
 
   async function copiar() {
     try {
-      await navigator.clipboard.writeText(textoRomaneio())
+      await navigator.clipboard.writeText(textoRomaneio(e, r))
       setCopiado(true)
       setTimeout(() => setCopiado(false), 2500)
     } catch {
@@ -242,137 +151,133 @@ export function Calculadora() {
     }
   }
 
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <section className="lg:col-span-3 space-y-4">
-        <div className="bg-white border rounded-2xl p-4 sm:p-5 shadow-sm space-y-4 print:border-0 print:shadow-none print:p-0">
-          <div className="print:hidden">
-            <Alternativa
-              rotulo="Tipo de madeira"
-              valor={aba}
-              onChange={v => { setAba(v); setCopiado(false) }}
-              opcoes={[{ valor: 'tora', label: 'Madeira em tora' }, { valor: 'serrada', label: 'Madeira serrada' }]}
-            />
-          </div>
+  const subtitulo = e.tipo === 'tora'
+    ? `Toras · ${METODOS_TORA[e.metodo].titulo}`
+    : `Serrada · ${MODELOS[e.modelo].label} · seção em ${e.unidade === 'cm' ? 'centímetros' : 'polegadas'}`
 
-          {aba === 'tora' ? (
-            <div className="space-y-1.5">
-              <Label>Método de cubagem</Label>
-              <Alternativa
-                rotulo="Método de cubagem"
-                valor={metodo}
-                onChange={setMetodo}
-                opcoes={[{ valor: 'smalian', label: 'Geométrico' }, { valor: 'francon', label: 'Francon' }]}
-              />
-              <p className="text-xs text-slate-500">{METODOS_TORA[metodo].resumo}</p>
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <section className="min-w-0 space-y-4 print:hidden">
+        <div className="space-y-4 rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
+          <Alternativa
+            rotulo="Tipo de madeira"
+            valor={e.tipo}
+            onChange={v => mudar('tipo', v)}
+            opcoes={[{ valor: 'tora', label: 'Madeira em tora' }, { valor: 'serrada', label: 'Madeira serrada' }]}
+          />
+
+          {e.tipo === 'tora' ? (
+            <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+              <div className="space-y-1.5">
+                <Label>Método de cubagem</Label>
+                <Alternativa
+                  pequena
+                  rotulo="Método de cubagem"
+                  valor={e.metodo}
+                  onChange={v => mudar('metodo', v)}
+                  opcoes={[{ valor: 'smalian', label: 'Geométrico' }, { valor: 'francon', label: 'Francon' }]}
+                />
+              </div>
+              {e.metodo === 'smalian' && (
+                <label className="flex items-center gap-2 pb-1 text-sm text-slate-700">
+                  <input type="checkbox" checked={e.duasMedidas} onChange={ev => mudar('duasMedidas', ev.target.checked)} className="h-4 w-4 accent-slate-900" />
+                  Duas medidas por ponta
+                </label>
+              )}
+              <p className="basis-full text-xs text-slate-500">
+                {METODOS_TORA[e.metodo].resumo} Diâmetros e circunferência em cm, comprimento em m.
+              </p>
             </div>
           ) : (
-            <div className="space-y-1.5">
-              <Label>Espessura e largura em</Label>
-              <Alternativa
-                rotulo="Unidade da seção"
-                valor={unidade}
-                onChange={setUnidade}
-                opcoes={[{ valor: 'cm', label: 'Centímetros' }, { valor: 'pol', label: 'Polegadas' }]}
-              />
-              <p className="text-xs text-slate-500">
-                Volume = espessura × largura × comprimento × peças. O comprimento é sempre em metros
-                {unidade === 'pol' ? '; 1 polegada = 2,54 cm.' : '.'}
-              </p>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+                <div className="space-y-1.5">
+                  <Label>Modelo do romaneio</Label>
+                  <Alternativa
+                    pequena
+                    rotulo="Modelo do romaneio"
+                    valor={e.modelo}
+                    onChange={v => mudar('modelo', v)}
+                    opcoes={(Object.keys(MODELOS) as Modelo[]).map(m => ({ valor: m, label: MODELOS[m].label }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Bitola e largura em</Label>
+                  <Alternativa
+                    pequena
+                    rotulo="Unidade da seção"
+                    valor={e.unidade}
+                    onChange={v => mudar('unidade', v)}
+                    opcoes={[{ valor: 'cm', label: 'cm' }, { valor: 'pol', label: 'polegadas' }]}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-slate-500">{MODELOS[e.modelo].resumo} Comprimento sempre em metros.</p>
+              {e.modelo !== 'livre' && <EditorFaixa faixa={e.faixa} onAplicar={aplicarNovaFaixa} />}
             </div>
           )}
         </div>
 
-        <div ref={lista} className="space-y-2">
-          {aba === 'tora'
-            ? toras.map((t, i) => (
-              <div key={t.id} data-linha>
-                <Cartao titulo={`Tora ${i + 1}`} volume={volumesToras[i]} podeRemover={toras.length > 1} onRemover={() => setToras(ts => ts.filter(x => x.id !== t.id))}>
-                  {metodo === 'smalian' ? (
-                    <div className="grid grid-cols-5 gap-1.5">
-                      <Campo nome="d1" rotulo="Base (cm)" placeholder="48" valor={t.d1} onChange={v => mudarTora(t.id, 'd1', v)} />
-                      <Campo nome="d2" rotulo="Base 2" placeholder="opc." valor={t.d2} onChange={v => mudarTora(t.id, 'd2', v)} />
-                      <Campo nome="d3" rotulo="Topo (cm)" placeholder="40" valor={t.d3} onChange={v => mudarTora(t.id, 'd3', v)} />
-                      <Campo nome="d4" rotulo="Topo 2" placeholder="opc." valor={t.d4} onChange={v => mudarTora(t.id, 'd4', v)} />
-                      <Campo nome="comp" rotulo="Compr. (m)" placeholder="4,5" valor={t.comp} onChange={v => mudarTora(t.id, 'comp', v)} onEnter={i === toras.length - 1 ? adicionar : undefined} />
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <Campo nome="circ" rotulo="Circunferência no meio (cm)" placeholder="140" valor={t.circ} onChange={v => mudarTora(t.id, 'circ', v)} />
-                      <Campo nome="comp" rotulo="Comprimento (m)" placeholder="4,5" valor={t.comp} onChange={v => mudarTora(t.id, 'comp', v)} onEnter={i === toras.length - 1 ? adicionar : undefined} />
-                    </div>
-                  )}
-                </Cartao>
-              </div>
-            ))
-            : pecas.map((p, i) => (
-              <div key={p.id} data-linha>
-                <Cartao titulo={`Item ${i + 1}`} volume={volumesPecas[i]} podeRemover={pecas.length > 1} onRemover={() => setPecas(ps => ps.filter(x => x.id !== p.id))}>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    <Campo nome="esp" rotulo={`Espessura (${unidade})`} placeholder={unidade === 'cm' ? '5' : '2'} valor={p.esp} onChange={v => mudarPeca(p.id, 'esp', v)} />
-                    <Campo nome="larg" rotulo={`Largura (${unidade})`} placeholder={unidade === 'cm' ? '20' : '8'} valor={p.larg} onChange={v => mudarPeca(p.id, 'larg', v)} />
-                    <Campo nome="comp" rotulo="Compr. (m)" placeholder="3" valor={p.comp} onChange={v => mudarPeca(p.id, 'comp', v)} />
-                    <Campo nome="qtd" rotulo="Peças" placeholder="10" valor={p.qtd} onChange={v => mudarPeca(p.id, 'qtd', v.replace(/\D/g, ''))} onEnter={i === pecas.length - 1 ? adicionar : undefined} />
-                  </div>
-                </Cartao>
-              </div>
-            ))}
-        </div>
-
-        <div className="flex flex-wrap gap-2 print:hidden">
-          <button type="button" onClick={adicionar} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">
-            + Adicionar {aba === 'tora' ? 'tora' : 'item'}
-          </button>
-          <button type="button" onClick={limpar} className="rounded-md border px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">
-            Limpar
-          </button>
-          <span className="self-center text-xs text-slate-400">Enter no último campo adiciona outra linha.</span>
-        </div>
+        {/* Os ids das linhas nascem no navegador; renderizar no servidor daria ids diferentes. */}
+        {!carregado && <div className="h-96 animate-pulse rounded-xl border bg-white" />}
+        {carregado && e.tipo === 'tora' && <FormToras blocos={e.toras} set={setToras} metodo={e.metodo} duasMedidas={e.duasMedidas} />}
+        {carregado && e.tipo === 'serrada' && e.modelo === 'padrao' && <FormPadrao blocos={e.padrao} set={setPadrao} unidade={e.unidade} faixa={e.faixa} />}
+        {carregado && e.tipo === 'serrada' && e.modelo === 'largura' && <FormLargura blocos={e.largura} set={setLargura} unidade={e.unidade} faixa={e.faixa} />}
+        {carregado && e.tipo === 'serrada' && e.modelo === 'livre' && <FormLivre linhas={e.livre} set={setLivre} unidade={e.unidade} />}
       </section>
 
-      <section className="lg:col-span-2 space-y-4">
-        <div className="bg-white border rounded-2xl p-4 sm:p-6 shadow-sm lg:sticky lg:top-4">
+      <section className="space-y-4">
+        <div className="rounded-2xl border bg-white p-4 shadow-sm sm:p-6 lg:sticky lg:top-4 print:border-0 print:p-0 print:shadow-none">
           <h2 className="text-lg font-medium">Total do romaneio</h2>
-          <p className="text-xs text-slate-500">
-            {aba === 'tora' ? `Toras · ${METODOS_TORA[metodo].titulo}` : `Madeira serrada · seção em ${unidade === 'cm' ? 'centímetros' : 'polegadas'}`}
-          </p>
+          <p className="text-xs text-slate-500">{subtitulo}</p>
 
           <div className="mt-4 flex items-baseline justify-between">
             <span className="text-slate-500">Volume</span>
-            <span className="text-2xl font-semibold tabular-nums" data-testid="cubagem-total">{total ? `${m3(total)} m³` : '—'}</span>
+            <span className="text-2xl font-semibold tabular-nums" data-testid="cubagem-total">{r.volume ? `${m3(r.volume)} m³` : '—'}</span>
           </div>
           <div className="mt-1 flex justify-between text-sm text-slate-500">
-            <span>{aba === 'tora' ? 'Toras' : 'Peças'}</span>
-            <span className="tabular-nums">{quantidade || '—'}</span>
+            <span>{r.rotulo}</span>
+            <span className="tabular-nums" data-testid="cubagem-quantidade">{r.quantidade || '—'}</span>
           </div>
-          {aba === 'tora' && total > 0 && (
+          {e.tipo === 'tora' && r.volume > 0 && (
             <div className="mt-1 flex justify-between gap-3 text-sm text-slate-500">
               <span>Serrada estimada ({Math.round(CRV_SERRADA * 100)}%)</span>
-              <span className="tabular-nums">{m3(total * CRV_SERRADA, 3)} m³</span>
+              <span className="tabular-nums">{m3(r.volume * CRV_SERRADA, 3)} m³</span>
             </div>
           )}
 
-          <div className="mt-5 space-y-1.5 border-t pt-4">
+          <div className="mt-5 space-y-1.5 border-t pt-4 print:hidden">
             <Label htmlFor="preco">Preço por m³ (opcional)</Label>
-            <Input id="preco" inputMode="decimal" placeholder="R$ 0,00" value={preco} onChange={e => setPreco(e.target.value.slice(0, 14))} />
+            <Input id="preco" inputMode="decimal" placeholder="R$ 0,00" value={e.preco} onChange={ev => mudar('preco', ev.target.value.slice(0, 14))} />
+            {e.tipo === 'tora' && e.toras.length > 1 && (
+              <p className="text-[11px] text-slate-400">O preço da espécie, quando preenchido, vale no lugar deste.</p>
+            )}
           </div>
-          {valorTotal !== null && (
+          {r.valor !== null && (
             <div className="mt-3 flex items-baseline justify-between">
               <span className="text-slate-500">Valor</span>
-              <span className="text-xl font-semibold tabular-nums" data-testid="cubagem-valor">{reais(valorTotal)}</span>
+              <span className="text-xl font-semibold tabular-nums" data-testid="cubagem-valor">{reais(r.valor)}</span>
             </div>
           )}
+          {e.tipo === 'tora' && r.valor !== null && lerNumero(e.preco) === null && e.toras.some(b => !lerNumero(b.preco) && b.linhas.length) && (
+            <p className="mt-1 text-[11px] text-slate-400">Espécies sem preço ficam fora do valor.</p>
+          )}
 
-          {!total && <p className="mt-3 text-xs text-slate-500">Preencha as medidas para calcular.</p>}
+          {!r.volume && <p className="mt-3 text-xs text-slate-500">Preencha as medidas para calcular.</p>}
 
           <div className="mt-5 flex gap-2 print:hidden">
-            <button type="button" onClick={copiar} disabled={!total} className="flex-1 rounded-md border px-3 py-2 text-sm hover:bg-slate-100 disabled:opacity-40">
+            <button type="button" onClick={copiar} disabled={!r.volume} className="flex-1 rounded-md border px-3 py-2 text-sm hover:bg-slate-100 disabled:opacity-40">
               {copiado ? 'Copiado!' : 'Copiar romaneio'}
             </button>
-            <button type="button" onClick={() => window.print()} disabled={!total} className="flex-1 rounded-md border px-3 py-2 text-sm hover:bg-slate-100 disabled:opacity-40">
+            <button type="button" onClick={() => window.print()} disabled={!r.volume} className="flex-1 rounded-md border px-3 py-2 text-sm hover:bg-slate-100 disabled:opacity-40">
               Imprimir
             </button>
           </div>
+          <button type="button" onClick={limpar} className="mt-2 w-full rounded-md px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 print:hidden">
+            Limpar {e.tipo === 'tora' ? 'toras' : `romaneio ${MODELOS[e.modelo].label.toLowerCase()}`}
+          </button>
+
+          {r.volume > 0 && <pre className="mt-6 hidden whitespace-pre-wrap font-sans text-sm print:block">{textoRomaneio(e, r)}</pre>}
         </div>
 
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5 print:hidden">
@@ -392,12 +297,23 @@ export function Calculadora() {
           </a>
         </div>
 
-        <ul className="text-xs text-slate-500 space-y-1.5 list-disc pl-4 print:hidden">
-          <li>Diâmetros e circunferência em centímetros; comprimento em metros. Aceita vírgula ou ponto.</li>
-          <li>No geométrico, a segunda medida de cada ponta é opcional: com ela, vale a média das duas.</li>
-          <li>Volume de cada linha arredondado em 4 casas, como nos romaneios.</li>
+        <ul className="list-disc space-y-1.5 pl-4 text-xs text-slate-500 print:hidden">
+          <li>Aceita vírgula ou ponto. Dá para lançar tudo pelo teclado, sem mouse.</li>
+          <li>No geométrico com duas medidas, vale a média das duas em cada ponta; a segunda pode ficar vazia.</li>
+          <li>Volume de cada linha (ou peça, na largura aberta) arredondado em 4 casas, como nos romaneios.</li>
           <li>O romaneio fica salvo só neste navegador.</li>
         </ul>
+
+        {/* No celular o painel do total fica depois dos blocos: barra fixa com o total enquanto digita. */}
+        {r.volume > 0 && (
+          <>
+            <div className="h-10 lg:hidden print:hidden" />
+            <div className="fixed inset-x-0 bottom-0 z-20 flex items-baseline justify-between gap-3 border-t bg-white/95 px-4 py-2.5 text-sm shadow-[0_-2px_8px_rgba(0,0,0,0.06)] backdrop-blur lg:hidden print:hidden">
+              <span className="text-slate-500">{r.quantidade} {r.quantidade === 1 ? (e.tipo === 'tora' ? 'tora' : 'peça') : r.rotulo.toLowerCase()}{r.valor !== null && ` · ${reais(r.valor)}`}</span>
+              <strong className="tabular-nums text-slate-900">{m3(r.volume)} m³</strong>
+            </div>
+          </>
+        )}
       </section>
     </div>
   )

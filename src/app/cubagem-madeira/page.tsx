@@ -19,6 +19,10 @@ const PERGUNTAS: { pergunta: string; resposta: string }[] = [
     resposta: 'Uma polegada tem 2,54 cm. Uma peça de 2 × 8 polegadas tem 5,08 × 20,32 cm. Na calculadora, escolha Polegadas e digite as medidas como vêm no pedido; o comprimento continua em metros.',
   },
   {
+    pergunta: 'Qual a diferença entre romaneio padrão e largura aberta?',
+    resposta: 'No romaneio padrão as peças têm bitola e largura fixas (ex.: 5 × 20 cm) e você conta quantas há em cada comprimento. Na largura aberta só a bitola (espessura) é fixa: cada peça tem a sua largura, então o romaneio lista a largura de peça por peça em cada comprimento. A calculadora tem os dois modelos, além da lista livre.',
+  },
+  {
     pergunta: 'Quantos m³ de madeira serrada saem de 1 m³ de tora?',
     resposta: 'A referência da Resolução CONAMA nº 411/2009 é um coeficiente de rendimento volumétrico de 35%: cerca de 0,35 m³ de serrada por m³ de tora. O rendimento real depende da espécie, do diâmetro e da serraria, e o órgão ambiental pode aceitar outro coeficiente com estudo técnico.',
   },
@@ -41,7 +45,8 @@ export default function Page() {
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 print:hidden">Todo o Brasil · Tora e serrada</p>
         <h1 className="text-2xl font-semibold">Cubagem de madeira</h1>
         <p className="text-sm text-slate-500">
-          Volume em m³ de toras (geométrico ou Francon) e de madeira serrada, com o romaneio, o total e o valor da carga.
+          Romaneio de toras (geométrico ou Francon) por espécie e de madeira serrada no modelo padrão ou largura aberta,
+          com o total em m³ e o valor da carga. Lance tudo pelo teclado.
         </p>
         <p className="mt-1 text-sm print:hidden">
           <Link href="/cubagem-madeira/como-calcular" className="text-sky-700 hover:underline">Fórmulas e exemplos resolvidos</Link>
