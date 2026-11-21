@@ -2,9 +2,10 @@
 // Os campos são strings, como digitados; a conta só acontece na leitura.
 
 import {
-  METODOS_TORA, lerNumero, m3, reais, volumeFrancon, volumeSerrada, volumeSmalian,
+  METODOS_TORA, POLEGADA_CM, lerNumero, m3, reais, volumeFrancon, volumeSerrada, volumeSmalian,
   type MetodoTora, type UnidadeSecao,
 } from '@/lib/cubagem'
+import { CLASSES, classePeca, type Classe } from './classes'
 
 export type Tipo = 'tora' | 'serrada'
 export type Modelo = 'padrao' | 'largura' | 'livre'
@@ -208,6 +209,73 @@ export function resumir(e: Estado): Resumo {
   }
 }
 
+// ─── Classes (prancha, viga, caibro…) ───────────────────────────────────────
+
+export interface LinhaClasse { especie: number; classe: Classe; medidas: string; pecas: number; volume: number }
+
+// Peças de uma espécie com a seção como digitada (na unidade do romaneio).
+function secoesSerrada(s: EspecieSerrada, modelo: Modelo, u: UnidadeSecao) {
+  const out: { a: number; b: number; pecas: number; vol: number }[] = []
+  if (modelo === 'padrao') {
+    for (const b of s.padrao) for (const l of b.linhas) {
+      const vol = volPadrao(b, l, u)
+      if (vol) out.push({ a: lerNumero(b.bitola)!, b: lerNumero(b.largura)!, pecas: pecasPadrao(b, l), vol })
+    }
+  } else if (modelo === 'largura') {
+    for (const b of s.largura) for (const l of b.linhas) {
+      if (!volLargura(b, l, u)) continue
+      const bit = lerNumero(b.bitola)!
+      for (const c of classificar(l)) {
+        out.push({ a: bit, b: c.largura, pecas: c.qtd, vol: (volumeSerrada(bit, c.largura, lerNumero(l.comp), 1, u) ?? 0) * c.qtd })
+      }
+    }
+  } else {
+    for (const l of s.livre) {
+      const vol = volLivre(l, u)
+      if (vol) out.push({ a: lerNumero(l.esp)!, b: lerNumero(l.larg)!, pecas: lerNumero(l.qtd) ?? 0, vol })
+    }
+  }
+  return out
+}
+
+// "5 × 20/25" ou, com muitas larguras (largura aberta), "5 × 21 a 30".
+function descreverMedidas(secoes: Map<number, Set<number>>): string {
+  return Array.from(secoes).sort((x, y) => x[0] - y[0]).map(([esp, largs]) => {
+    const ls = Array.from(largs).sort((x, y) => x - y)
+    return `${num(esp)} × ${ls.length > 3 ? `${num(ls[0])} a ${num(ls[ls.length - 1])}` : ls.map(num).join('/')}`
+  }).join('; ')
+}
+
+// Peças e volume por classe, espécie a espécie (só madeira serrada).
+export function porClasse(e: Estado): LinhaClasse[] {
+  if (e.tipo !== 'serrada') return []
+  const cm = e.unidade === 'pol' ? POLEGADA_CM : 1
+  return e.serradas.flatMap(s => {
+    const grupos = new Map<Classe, { secoes: Map<number, Set<number>>; pecas: number; vols: number[] }>()
+    for (const p of secoesSerrada(s, e.modelo, e.unidade)) {
+      const classe = classePeca(p.a * cm, p.b * cm)
+      const g = grupos.get(classe) ?? { secoes: new Map<number, Set<number>>(), pecas: 0, vols: [] as number[] }
+      const [esp, larg] = p.a <= p.b ? [p.a, p.b] : [p.b, p.a]
+      g.secoes.set(esp, (g.secoes.get(esp) ?? new Set()).add(larg))
+      g.pecas += p.pecas
+      g.vols.push(p.vol)
+      grupos.set(classe, g)
+    }
+    return CLASSES.filter(c => grupos.has(c)).map(c => {
+      const g = grupos.get(c)!
+      return { especie: s.id, classe: c, medidas: descreverMedidas(g.secoes), pecas: g.pecas, volume: somar(g.vols) }
+    })
+  })
+}
+
+// Soma as classes de todas as espécies.
+export function totalPorClasse(linhas: LinhaClasse[]): { classe: Classe; pecas: number; volume: number }[] {
+  return CLASSES.map(classe => {
+    const ls = linhas.filter(l => l.classe === classe)
+    return { classe, pecas: ls.reduce((t, l) => t + l.pecas, 0), volume: somar(ls.map(l => l.volume)) }
+  }).filter(c => c.pecas || c.volume)
+}
+
 export const TITULO_MODELO: Record<Modelo, string> = { padrao: 'padrão', largura: 'largura aberta', livre: 'lista' }
 
 export function tituloRomaneio(e: Estado): string {
@@ -272,6 +340,11 @@ export function textoRomaneio(e: Estado, r: Resumo): string {
       out.push(...textoSerrada(e.serradas.find(x => x.id === p.id)!, e))
     }
     if (comTitulo) out.push(`Subtotal: ${p.quantidade} ${unidadeQtd(tora, p.quantidade)}, ${m3(p.volume)} m³${p.valor !== null ? `, ${reais(p.valor)}` : ''}`)
+  }
+  const classes = totalPorClasse(porClasse(e))
+  if (classes.length) {
+    out.push('', '*Por classe*')
+    for (const c of classes) out.push(`${c.classe}: ${c.pecas} ${unidadeQtd(false, c.pecas)}, ${m3(c.volume)} m³`)
   }
   out.push('', `Total: ${r.quantidade} ${unidadeQtd(tora, r.quantidade)}, ${m3(r.volume)} m³`)
   if (r.valor) out.push(`Valor: ${reais(r.valor)}`)

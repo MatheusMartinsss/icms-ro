@@ -6,7 +6,7 @@ import type { Documento, TabelaDoc } from './documento'
 
 const td = 'border border-slate-300 px-1.5 py-0.5 tabular-nums'
 const th = 'border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-left font-medium'
-const COLUNAS = { 2: 'grid-cols-2', 3: 'grid-cols-3' } as const
+const COLUNAS = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' } as const
 
 function Tabela({ t }: { t: TabelaDoc }) {
   const ult = t.cabecalho.length - 1

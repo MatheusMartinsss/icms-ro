@@ -3,13 +3,13 @@
 
 import { lerNumero, m3, reais, volumeSerrada } from '@/lib/cubagem'
 import {
-  classificar, especiesUsadas, multPadrao, pecasPadrao, somar, tituloRomaneio, unidadeQtd,
+  classificar, especiesUsadas, multPadrao, pecasPadrao, porClasse, somar, tituloRomaneio, unidadeQtd,
   volLargura, volLivre, volPadrao, volTora,
   type Estado, type Parcial, type Resumo,
 } from './romaneio'
 
 export interface TabelaDoc { titulo?: string; resumo?: string; cabecalho: string[]; linhas: string[][]; rodape?: string[] }
-export interface SecaoDoc { titulo?: string; resumo?: string; porLinha: 2 | 3; tabelas: TabelaDoc[] }
+export interface SecaoDoc { titulo?: string; resumo?: string; porLinha: 1 | 2 | 3; tabelas: TabelaDoc[] }
 export interface Documento { titulo: string; data: string; secoes: SecaoDoc[]; totais: string[]; arquivo: string }
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
@@ -103,6 +103,27 @@ export function montarDocumento(e: Estado, r: Resumo, agora = new Date()): Docum
       }),
     }
   })
+
+  // Fechamento por classe (prancha, viga, caibro…), com a espécie quando há mais de uma.
+  if (!tora) {
+    const classes = porClasse(e).filter(c => usadas.some(p => p.id === c.especie))
+    const varias = usadas.length > 1
+    if (classes.length) {
+      secoes.push({
+        titulo: 'Por classe',
+        resumo: 'nomenclatura da NBR 7203',
+        porLinha: varias ? 1 : 2,
+        tabelas: [{
+          cabecalho: [...(varias ? ['Espécie'] : []), 'Classe', `Medidas (${u})`, 'Pç', 'm³'],
+          linhas: classes.map((c, i) => [
+            ...(varias ? [i && classes[i - 1].especie === c.especie ? '' : usadas.find(p => p.id === c.especie)!.nome] : []),
+            c.classe, c.medidas, String(c.pecas), m3(c.volume),
+          ]),
+          rodape: [...(varias ? [''] : []), 'Total', '', String(r.quantidade), m3(r.volume)],
+        }],
+      })
+    }
+  }
 
   const data = agora.toLocaleDateString('pt-BR')
   const nome = usadas.length === 1 && comTitulo ? slug(usadas[0].nome) : tora ? 'toras' : 'serrada'
