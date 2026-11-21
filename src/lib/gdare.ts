@@ -104,7 +104,7 @@ export interface DarMtPayload {
   periodoReferencia: string // mm/aaaa
   dataVencimento?: string | null // dd/mm/aaaa
   quantidade: number
-  municipio: string
+  municipio?: string | null // só CNPJ e CPF; com IE a SEFAZ-MT usa o do cadastro
   informacoes?: string | null
   // O gdare aborta antes de emitir se a SEFAZ-MT calcular outro valor.
   valorEsperado: number

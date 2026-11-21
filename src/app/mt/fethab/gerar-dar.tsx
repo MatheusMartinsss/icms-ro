@@ -99,7 +99,10 @@ export default function GerarDar({ produto, periodo, periodoOk, quantidade, guia
   }, [carregando, ativa?.id])
 
   const docOk = documentoValido(tipo, numero)
-  const municipioOk = municipioMtValido(municipio)
+  // Com IE a SEFAZ-MT usa o município do cadastro da inscrição e nem mostra a
+  // lista. Só CNPJ e CPF escolhem o município.
+  const pedeMunicipio = tipo !== 'ie'
+  const municipioOk = !pedeMunicipio || municipioMtValido(municipio)
   const vencimentoOk = !!vencimento && vencimento >= hoje && vencimento <= umAno
   const quantidadeOk = quantidade !== null && quantidade > 0
 
@@ -152,7 +155,7 @@ export default function GerarDar({ produto, periodo, periodoOk, quantidade, guia
           periodoReferencia: periodo,
           dataVencimento: paraBr(vencimento),
           quantidade,
-          municipio,
+          municipio: pedeMunicipio ? municipio : null,
           informacoes: paraAscii(informacoes).slice(0, 220) || null,
           valorEsperado: guia.total,
         }),
@@ -225,18 +228,29 @@ export default function GerarDar({ produto, periodo, periodoOk, quantidade, guia
 
         <div className="space-y-1.5">
           <Label htmlFor="municipio">Município do remetente</Label>
-          <Input
-            id="municipio"
-            list="municipios-mt"
-            autoComplete="off"
-            placeholder="Ex: Sorriso"
-            value={municipio}
-            onChange={e => setMunicipio(e.target.value)}
-          />
-          <datalist id="municipios-mt">
-            {MUNICIPIOS_MT.map(m => <option key={m} value={m} />)}
-          </datalist>
-          {municipio && !municipioOk && <p className="text-xs text-red-600">Município fora da lista da SEFAZ-MT.</p>}
+          {pedeMunicipio ? (
+            <>
+              <Input
+                id="municipio"
+                list="municipios-mt"
+                autoComplete="off"
+                placeholder="Ex: Sorriso"
+                value={municipio}
+                onChange={e => setMunicipio(e.target.value)}
+              />
+              <datalist id="municipios-mt">
+                {MUNICIPIOS_MT.map(m => <option key={m} value={m} />)}
+              </datalist>
+              {municipio && !municipioOk && <p className="text-xs text-red-600">Município fora da lista da SEFAZ-MT.</p>}
+            </>
+          ) : (
+            <>
+              <div id="municipio" className="flex h-10 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
+                {municipio || 'Do cadastro da IE'}
+              </div>
+              <p className="text-xs text-slate-500">Com IE, a SEFAZ-MT usa o município do cadastro da inscrição.</p>
+            </>
+          )}
         </div>
 
         <div className="space-y-1.5">

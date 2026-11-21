@@ -28,9 +28,13 @@ const schema = z.object({
   periodoReferencia: z.string().trim().refine(periodoValido, 'período no formato mm/aaaa'),
   dataVencimento: z.string().trim().regex(/^\d{2}\/\d{2}\/\d{4}$/, 'vencimento no formato dd/mm/aaaa').optional().nullable().or(z.literal('')),
   quantidade: z.coerce.number().positive('a quantidade precisa ser maior que zero').max(10_000_000),
-  municipio: z.string().trim().min(2, 'informe o município do remetente').max(80),
+  // Com IE a SEFAZ-MT usa o município do cadastro; só CNPJ e CPF precisam dele.
+  municipio: z.string().trim().max(80).optional().nullable(),
   informacoes: z.string().trim().max(220).optional().nullable(),
   valorEsperado: z.coerce.number().positive().max(100_000_000),
+}).refine(d => d.documento.tipo === 'ie' || (d.municipio ?? '').length >= 2, {
+  message: 'informe o município do remetente',
+  path: ['municipio'],
 })
 
 export async function POST(request: Request) {
@@ -52,7 +56,7 @@ export async function POST(request: Request) {
       periodoReferencia: input.periodoReferencia,
       dataVencimento: input.dataVencimento || null,
       quantidade: input.quantidade,
-      municipio: input.municipio,
+      municipio: input.documento.tipo === 'ie' ? null : input.municipio,
       informacoes: input.informacoes || null,
       valorEsperado: input.valorEsperado,
     })
