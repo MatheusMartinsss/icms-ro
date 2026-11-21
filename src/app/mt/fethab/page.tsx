@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { toast } from 'sonner'
 import { registrarEvento } from '@/lib/analytics'
 import { Input } from '@/components/ui/input'
@@ -180,6 +181,11 @@ export default function FethabPage() {
         <h1 className="text-2xl font-semibold">FETHAB</h1>
         <p className="text-sm text-slate-500">
           Fundo de Transporte e Habitação. O valor é um percentual da UPF/MT por tonelada, cabeça ou m³.
+        </p>
+        <p className="mt-1 text-sm">
+          <Link href="/mt/fethab/tabela" className="text-sky-700 hover:underline">Tabela de valores e códigos</Link>
+          <span className="text-slate-300 mx-2" aria-hidden>·</span>
+          <Link href="/mt/fethab/como-emitir" className="text-sky-700 hover:underline">Como emitir, passo a passo</Link>
         </p>
       </header>
 

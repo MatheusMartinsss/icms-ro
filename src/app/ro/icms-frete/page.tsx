@@ -1,6 +1,7 @@
 "use client"
 
 import React, { ChangeEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { registrarEvento } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
@@ -478,6 +479,9 @@ export default function IcmsFretePage() {
               <p className="text-sm text-slate-500">
                 ICMS {aliquotaLabel} com redução de {reducaoLabel}
                 {ativa ? ` · ${ativa.nomeFantasia || ativa.razaoSocial}` : ' · padrão (nenhuma empresa selecionada)'}
+              </p>
+              <p className="mt-1 text-sm">
+                <Link href="/ro/icms-frete/tabela" className="text-sky-700 hover:underline">Tabela da ANTT e como o cálculo é feito</Link>
               </p>
             </div>
           </div>

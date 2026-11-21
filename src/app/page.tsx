@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { ESTADOS, FERRAMENTAS, STATUS_LABEL, disponivel, type Ferramenta } from '@/lib/ferramentas'
+import { PAGINAS_CONTEUDO } from '@/lib/site'
 import { cn } from '@/lib/utils'
 
 function CardFerramenta({ f }: { f: Ferramenta }) {
@@ -59,6 +60,20 @@ export default function Home() {
           </section>
         ))}
       </div>
+
+      <section className="mt-12">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">Tabelas e passo a passo</h2>
+        <ul className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {PAGINAS_CONTEUDO.map(p => (
+            <li key={p.href}>
+              <Link href={p.href} className="block h-full bg-white border rounded-2xl p-5 hover:border-sky-300 hover:shadow-md transition">
+                <h3 className="font-semibold">{p.titulo}</h3>
+                <p className="mt-2 text-sm text-slate-600">{p.resumo}</p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
     </main>
   )
 }
