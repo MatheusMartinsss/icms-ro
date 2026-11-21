@@ -41,14 +41,14 @@ const FAQ_LD = {
 export default function Page() {
   return (
     <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
-      <header className="mb-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 print:hidden">Todo o Brasil · Tora e serrada</p>
+      <header className="mb-6 print:hidden">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Todo o Brasil · Tora e serrada</p>
         <h1 className="text-2xl font-semibold">Cubagem de madeira</h1>
         <p className="text-sm text-slate-500">
           Romaneio de toras (geométrico ou Francon) por espécie e de madeira serrada no modelo padrão ou largura aberta,
           com o total em m³ e o valor da carga. Lance tudo pelo teclado.
         </p>
-        <p className="mt-1 text-sm print:hidden">
+        <p className="mt-1 text-sm">
           <Link href="/cubagem-madeira/como-calcular" className="text-sky-700 hover:underline">Fórmulas e exemplos resolvidos</Link>
         </p>
       </header>

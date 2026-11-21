@@ -10,6 +10,7 @@ import { FormLargura } from './form-largura'
 import { FormLivre } from './form-livre'
 import { FormPadrao } from './form-padrao'
 import { FormToras } from './form-toras'
+import { RomaneioImpresso } from './impresso'
 import {
   aplicarFaixa, comprimentosDaFaixa, estadoInicial, novaLarguraLinha, novaLivreLinha, novaPadraoLinha,
   novoLarguraBloco, novoPadraoBloco, novoToraBloco, restaurar, resumir, textoRomaneio,
@@ -226,8 +227,10 @@ export function Calculadora() {
         {carregado && e.tipo === 'serrada' && e.modelo === 'livre' && <FormLivre linhas={e.livre} set={setLivre} unidade={e.unidade} />}
       </section>
 
-      <section className="space-y-4">
-        <div className="rounded-2xl border bg-white p-4 shadow-sm sm:p-6 lg:sticky lg:top-4 print:border-0 print:p-0 print:shadow-none">
+      {carregado && r.volume > 0 && <RomaneioImpresso e={e} r={r} />}
+
+      <section className="space-y-4 print:hidden">
+        <div className="rounded-2xl border bg-white p-4 shadow-sm sm:p-6 lg:sticky lg:top-4">
           <h2 className="text-lg font-medium">Total do romaneio</h2>
           <p className="text-xs text-slate-500">{subtitulo}</p>
 
@@ -270,14 +273,13 @@ export function Calculadora() {
               {copiado ? 'Copiado!' : 'Copiar romaneio'}
             </button>
             <button type="button" onClick={() => window.print()} disabled={!r.volume} className="flex-1 rounded-md border px-3 py-2 text-sm hover:bg-slate-100 disabled:opacity-40">
-              Imprimir
+              Imprimir / PDF
             </button>
           </div>
           <button type="button" onClick={limpar} className="mt-2 w-full rounded-md px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 print:hidden">
             Limpar {e.tipo === 'tora' ? 'toras' : `romaneio ${MODELOS[e.modelo].label.toLowerCase()}`}
           </button>
 
-          {r.volume > 0 && <pre className="mt-6 hidden whitespace-pre-wrap font-sans text-sm print:block">{textoRomaneio(e, r)}</pre>}
         </div>
 
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5 print:hidden">
