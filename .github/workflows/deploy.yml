@@ -1,0 +1,92 @@
+# Deploy do GeraGuia (geraguia.com.br).
+# Push na master: build da imagem -> registry.gflona.com.br/geraguia:{sha,latest}
+# -> na VPS, troca só o container "web" da stack /opt/geraguia.
+# O "next build" do Dockerfile já roda o type-check e o lint: erro ali barra o deploy.
+#
+# Rollback manual na VPS:
+#   cd /opt/geraguia && WEB_TAG=<sha antigo> docker compose -f docker-compose.prod.yml up -d --no-deps web
+
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-geraguia-web
+  cancel-in-progress: false
+
+env:
+  REGISTRY: registry.gflona.com.br
+  IMAGE: registry.gflona.com.br/geraguia
+  DEPLOY_PATH: /opt/geraguia
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.CI_REGISTRY_USER }}
+          password: ${{ secrets.CI_REGISTRY_PASSWORD }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          build-args: |
+            APP_VERSION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copiar compose para a VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: deploy/docker-compose.prod.yml
+          target: ${{ env.DEPLOY_PATH }}
+          strip_components: 1
+
+      - name: Subir a versão nova
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 10m
+          script: |
+            set -e
+            cd ${{ env.DEPLOY_PATH }}
+            export WEB_TAG=${{ github.sha }}
+            docker compose -f docker-compose.prod.yml pull web
+            # --no-deps: não reinicia o gdare (ele tem deploy próprio).
+            docker compose -f docker-compose.prod.yml up -d --no-deps web
+
+            for i in $(seq 1 45); do
+              if curl -fsS http://127.0.0.1:3060/api/health | grep -q "${{ github.sha }}"; then
+                echo "No ar: ${{ github.sha }}"
+                docker image prune -f > /dev/null
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "A versão nova não respondeu no /api/health"
+            docker compose -f docker-compose.prod.yml logs --tail 50 web
+            exit 1

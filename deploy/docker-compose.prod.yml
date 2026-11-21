@@ -1,0 +1,53 @@
+# Produção do GeraGuia na VPS (/opt/geraguia). O CI copia este arquivo para lá e roda:
+#   docker compose -f docker-compose.prod.yml pull web && docker compose -f docker-compose.prod.yml up -d --no-deps web
+# O gdare tem CI próprio (repositório gdare) e atualiza só o serviço "gdare".
+# Variáveis vêm do .env ao lado (modelo em deploy/.env.example).
+#
+# Fica separado do icms-ro antigo (porta 3050) e do gdare-v1 (porta 8081),
+# que continuam atendendo o calculadoraicms.online.
+
+name: geraguia
+
+services:
+  web:
+    image: ${REGISTRY:-registry.gflona.com.br}/geraguia:${WEB_TAG:-latest}
+    container_name: geraguia-web
+    env_file: .env
+    environment:
+      # O gdare desta stack, pela rede interna. Não passa pelo nginx.
+      GDARE_URL: http://gdare:8080
+    depends_on:
+      - gdare
+    # Só localhost: o nginx do host publica em geraguia.com.br.
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3060}:3000"
+    mem_limit: 512m
+    restart: unless-stopped
+    logging: &logs
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [geraguia]
+
+  gdare:
+    image: ${REGISTRY:-registry.gflona.com.br}/gdare:${GDARE_TAG:-latest}
+    container_name: geraguia-gdare
+    environment:
+      PORT: 8080
+      API_KEY: ${GDARE_API_KEY:?defina GDARE_API_KEY no .env}
+      MAX_CONCURRENCY: ${GDARE_MAX_CONCURRENCY:-2}
+      BROWSER_RECYCLE_AFTER: 100
+      PAGE_TIMEOUT_MS: 45000
+      SEFAZ_MT_TIMEOUT_MS: 90000
+    # Sem porta publicada: só o web fala com ele.
+    # O Chrome usa /dev/shm; o padrão do Docker (64MB) é pequeno.
+    shm_size: "512mb"
+    # Um Chrome travado não pode derrubar o resto da VPS.
+    mem_limit: 1536m
+    restart: unless-stopped
+    logging: *logs
+    networks: [geraguia]
+
+networks:
+  geraguia:
